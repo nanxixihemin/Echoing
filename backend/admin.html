@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Echoing Admin</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f6f7f4; color: #1f2a24; }
+    header { padding: 20px 24px; background: #173d2d; color: white; display: flex; justify-content: space-between; align-items: center; }
+    main { max-width: 1120px; margin: 0 auto; padding: 24px; }
+    section { margin-bottom: 24px; }
+    input, select, button, textarea { font: inherit; }
+    input, select { height: 36px; border: 1px solid #cfd8d1; border-radius: 6px; padding: 0 10px; background: white; }
+    button { height: 36px; border: 0; border-radius: 6px; padding: 0 12px; background: #2f7d4b; color: white; cursor: pointer; }
+    button.secondary { background: #65756c; }
+    button.danger { background: #b43b3b; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .panel { background: white; border: 1px solid #dfe6e0; border-radius: 8px; padding: 16px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .grid { display: grid; gap: 12px; }
+    .leaf, .history { border: 1px solid #e1e7e2; border-radius: 8px; padding: 12px; background: #fff; }
+    .meta { color: #68786e; font-size: 12px; margin-bottom: 8px; }
+    .content { white-space: pre-wrap; line-height: 1.5; }
+    .tag { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #e8f2ea; color: #28643d; font-size: 12px; }
+    .tag.deleted { background: #f8e4e4; color: #a53030; }
+    .tag.hidden { background: #fff0cf; color: #8a5a00; }
+    .error { color: #b43b3b; }
+    .muted { color: #68786e; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Echoing Admin</strong>
+    <button id="logoutBtn" class="secondary">Logout</button>
+  </header>
+  <main>
+    <section id="loginPanel" class="panel">
+      <h2>Admin Login</h2>
+      <div class="row">
+        <input id="username" placeholder="username" autocomplete="username">
+        <input id="password" placeholder="password" type="password" autocomplete="current-password">
+        <button id="loginBtn">Login</button>
+      </div>
+      <p id="loginError" class="error"></p>
+    </section>
+
+    <section id="adminPanel" class="grid" style="display:none">
+      <div class="panel">
+        <div class="row">
+          <h2 style="margin-right:auto">Shared Forest</h2>
+          <select id="leafStatus">
+            <option value="">all</option>
+            <option value="visible">visible</option>
+            <option value="hidden">hidden</option>
+            <option value="deleted">deleted</option>
+          </select>
+          <button id="refreshLeaves">Refresh</button>
+        </div>
+        <div id="leaves" class="grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <h2 style="margin-right:auto">AI History</h2>
+          <button id="refreshHistory">Refresh</button>
+        </div>
+        <div id="history" class="grid"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const tokenKey = 'echoing_admin_token';
+    const loginPanel = document.getElementById('loginPanel');
+    const adminPanel = document.getElementById('adminPanel');
+    const loginError = document.getElementById('loginError');
+
+    function token() { return localStorage.getItem(tokenKey) || ''; }
+    function authHeaders() { return { 'Authorization': 'Bearer ' + token() }; }
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    async function api(path, options = {}) {
+      const headers = Object.assign({}, options.headers || {});
+      if (token()) headers.Authorization = 'Bearer ' + token();
+      if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+      const res = await fetch(path, Object.assign({}, options, { headers }));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || res.statusText);
+      return data;
+    }
+    function setLoggedIn(isLoggedIn) {
+      loginPanel.style.display = isLoggedIn ? 'none' : 'block';
+      adminPanel.style.display = isLoggedIn ? 'grid' : 'none';
+    }
+    async function login() {
+      loginError.textContent = '';
+      try {
+        const data = await api('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value
+          })
+        });
+        localStorage.setItem(tokenKey, data.token);
+        setLoggedIn(true);
+        await Promise.all([loadLeaves(), loadHistory()]);
+      } catch (err) {
+        loginError.textContent = err.message;
+      }
+    }
+    async function loadLeaves() {
+      const status = document.getElementById('leafStatus').value;
+      const data = await api('/api/admin/leaves?limit=100' + (status ? '&status=' + encodeURIComponent(status) : ''));
+      document.getElementById('leaves').innerHTML = data.leaves.map(leaf => {
+        const statusClass = leaf.status === 'deleted' ? 'deleted' : (leaf.status === 'hidden' ? 'hidden' : '');
+        return `<div class="leaf">
+          <div class="meta">
+            <span class="tag ${statusClass}">${escapeHtml(leaf.status)}</span>
+            ${escapeHtml(leaf.nickname)} · ${escapeHtml(leaf.created_at)} · likes ${escapeHtml(leaf.like_count)}
+          </div>
+          <div class="content">${escapeHtml(leaf.content)}</div>
+          <p class="muted">${escapeHtml(leaf.moderation_reason || '')}</p>
+          <div class="row">
+            <button class="danger" onclick="deleteLeaf('${escapeHtml(leaf.id)}')">Delete</button>
+            <button class="secondary" onclick="hideLeaf('${escapeHtml(leaf.id)}')">Hide</button>
+            <button onclick="restoreLeaf('${escapeHtml(leaf.id)}')">Restore</button>
+          </div>
+        </div>`;
+      }).join('') || '<p class="muted">No leaves</p>';
+    }
+    async function loadHistory() {
+      const data = await api('/api/admin/ai-history?limit=80');
+      document.getElementById('history').innerHTML = data.items.map(item => `
+        <div class="history">
+          <div class="meta"><span class="tag">${escapeHtml(item.status)}</span> ${escapeHtml(item.created_at)} · ${escapeHtml(item.model)} · ${escapeHtml(item.latency_ms)}ms</div>
+          <div class="content"><strong>Prompt</strong>\n${escapeHtml(item.prompt_preview)}</div>
+          <div class="content"><strong>Response</strong>\n${escapeHtml(item.response_preview || item.error_message)}</div>
+        </div>
+      `).join('') || '<p class="muted">No AI history</p>';
+    }
+    async function deleteLeaf(id) { await api('/api/admin/leaves/' + id, { method: 'DELETE' }); await loadLeaves(); }
+    async function restoreLeaf(id) { await api('/api/admin/leaves/' + id + '/restore', { method: 'POST' }); await loadLeaves(); }
+    async function hideLeaf(id) {
+      const reason = prompt('Moderation reason', 'manual moderation') || 'manual moderation';
+      await api('/api/admin/leaves/' + id + '/hide', { method: 'POST', body: JSON.stringify({ reason }) });
+      await loadLeaves();
+    }
+    async function logout() {
+      try { await api('/api/auth/logout', { method: 'POST' }); } catch (err) {}
+      localStorage.removeItem(tokenKey);
+      setLoggedIn(false);
+    }
+    document.getElementById('loginBtn').onclick = login;
+    document.getElementById('logoutBtn').onclick = logout;
+    document.getElementById('refreshLeaves').onclick = loadLeaves;
+    document.getElementById('refreshHistory').onclick = loadHistory;
+    document.getElementById('leafStatus').onchange = loadLeaves;
+    if (token()) {
+      setLoggedIn(true);
+      Promise.all([loadLeaves(), loadHistory()]).catch(() => logout());
+    } else {
+      setLoggedIn(false);
+    }
+  </script>
+</body>
+</html>

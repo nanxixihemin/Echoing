@@ -1,0 +1,16 @@
+[Unit]
+Description=Echoing backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/echoing/backend
+EnvironmentFile=/opt/echoing/backend/.env
+ExecStart=/usr/bin/python3 /opt/echoing/backend/server.py
+Restart=always
+RestartSec=5
+User=echoing
+Group=echoing
+
+[Install]
+WantedBy=multi-user.target
