@@ -169,6 +169,7 @@ struct Index {
 
           Row({ space: 16 }) {
             this.MagicButton('\u5185\u7701', '#FF6B6B', (): void => {
+              console.info('[Echoing] Clicked Introspection button, setting activeTool to intro');
               this.activeTool = 'intro';
             })
             this.MagicButton('\u7075\u9b42', '#FFD93D', (): void => {

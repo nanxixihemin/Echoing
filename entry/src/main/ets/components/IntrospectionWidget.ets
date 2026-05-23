@@ -16,6 +16,10 @@ export struct IntrospectionWidget {
     '不谈宏大的计划。如果只要打破当下的僵局，今天你能走出的【最小第一步】是什么？'
   ];
 
+  aboutToAppear(): void {
+    console.info('[Echoing] IntrospectionWidget aboutToAppear called');
+  }
+
   nextStep() {
     if (this.currentInput.trim() === '') return;
     this.answers[this.currentStep] = this.currentInput;
