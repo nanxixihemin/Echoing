@@ -48,6 +48,7 @@ export struct SpinnerWidget {
         .onClick((): void => {
           if (!this.isSpinning) this.onClose();
         })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       // 核心 UI
       Column() {
@@ -154,5 +155,6 @@ export struct SpinnerWidget {
     }
     .width('100%')
     .height('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 }

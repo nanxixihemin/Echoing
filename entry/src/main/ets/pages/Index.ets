@@ -327,6 +327,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(ColorConstants.BACKGROUND_DARK)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 

@@ -30,6 +30,48 @@ export default class EntryAbility extends UIAbility {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
+    // 设置窗口为沉浸式全屏布局（解决全面屏下顶部状态栏和底部导航条呈现白边的问题）
+    windowStage.getMainWindow((err, data) => {
+      if (!err.code) {
+        let windowClass = data;
+        
+        // 设置窗口背景色为深色，防止任何瞬间出现白色闪烁/白底
+        windowClass.setWindowBackgroundColor('#050810', (colorErr) => {
+          if (colorErr.code) {
+            hilog.error(DOMAIN, 'testTag', 'Failed to set window background color. Cause: %{public}s', JSON.stringify(colorErr));
+          } else {
+            hilog.info(DOMAIN, 'testTag', 'Succeeded in setting window background color.');
+          }
+        });
+
+        // 启用沉浸式全屏布局
+        windowClass.setWindowLayoutFullScreen(true, (fullErr) => {
+          if (fullErr.code) {
+            hilog.error(DOMAIN, 'testTag', 'Failed to set full-screen. Cause: %{public}s', JSON.stringify(fullErr));
+          } else {
+            hilog.info(DOMAIN, 'testTag', 'Succeeded in setting full-screen layout.');
+            
+            // 将状态栏和导航栏背景设为全透明，同时强制状态栏文字与图标为白色（高对比度）
+            let sysBarProps: window.SystemBarProperties = {
+              statusBarColor: '#00000000',
+              navigationBarColor: '#00000000',
+              statusBarContentColor: '#FFFFFF',
+              navigationBarContentColor: '#FFFFFF'
+            };
+            windowClass.setWindowSystemBarProperties(sysBarProps, (barErr) => {
+              if (barErr.code) {
+                hilog.error(DOMAIN, 'testTag', 'Failed to set system bar properties. Cause: %{public}s', JSON.stringify(barErr));
+              } else {
+                hilog.info(DOMAIN, 'testTag', 'Succeeded in setting system bar properties.');
+              }
+            });
+          }
+        });
+      } else {
+        hilog.error(DOMAIN, 'testTag', 'Failed to obtain main window. Cause: %{public}s', JSON.stringify(err));
+      }
+    });
+
     // 初始化 AGC SDK：必须手动读取 agconnect-services.json 传入
     try {
       let resMgr = this.context.resourceManager;

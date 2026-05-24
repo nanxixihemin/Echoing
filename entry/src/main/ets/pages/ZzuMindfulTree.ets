@@ -126,12 +126,14 @@ struct Index {
         .width('100%')
         .height('100%')
         .objectFit(ImageFit.Cover)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       // 半透明遮罩层 - 动态调节背景亮度以保证文字和卡片的可读性，并衬托出深浅主题的氛围感
       Column()
         .width('100%')
         .height('100%')
         .backgroundColor(this.isDarkTime ? 'rgba(15, 23, 36, 0.78)' : 'rgba(255, 255, 255, 0.25)')
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       Column() {
         // 顶部时间区域

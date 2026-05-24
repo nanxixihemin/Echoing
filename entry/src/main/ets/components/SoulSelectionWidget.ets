@@ -64,6 +64,7 @@ export struct SoulSelectionWidget {
         .backgroundColor(ColorConstants.BACKGROUND_DARK)
         .opacity(0.95)
         .onClick((): void => { this.onClose(); })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       Column() {
         Text('灵魂天平 - 权衡 A 与 B')
@@ -217,5 +218,6 @@ export struct SoulSelectionWidget {
     }
     .width('100%')
     .height('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 }

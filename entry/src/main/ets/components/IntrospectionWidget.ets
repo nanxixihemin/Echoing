@@ -8,6 +8,7 @@ export struct IntrospectionWidget {
   @State currentStep: number = 0;
   @State answers: string[] = ['', '', '', ''];
   @State currentInput: string = '';
+  @State inputHint: string = '';
 
   private questions: string[] = [
     '沉下心来，剥开繁杂。此刻，究竟是什么在牵扯你的思绪？',
@@ -21,9 +22,15 @@ export struct IntrospectionWidget {
   }
 
   nextStep() {
-    if (this.currentInput.trim() === '') return;
+    const answer = this.currentInput.trim();
+    console.info(`[Echoing] Introspection nextStep tapped, step=${this.currentStep}, answerLength=${answer.length}`);
+    if (answer === '') {
+      this.inputHint = '先写下一点此刻浮现的答案，再继续。';
+      return;
+    }
     this.answers[this.currentStep] = this.currentInput;
     this.currentInput = '';
+    this.inputHint = '';
     
     if (this.currentStep < this.questions.length - 1) {
       animateTo({ duration: 400, curve: Curve.EaseOut }, (): void => {
@@ -44,6 +51,7 @@ export struct IntrospectionWidget {
         .backgroundColor(ColorConstants.BACKGROUND_DARK)
         .opacity(0.98)
         .onClick((): void => { this.onClose(); })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       Column() {
         // 头部
@@ -96,9 +104,15 @@ export struct IntrospectionWidget {
                  .height(100)
                  .backgroundColor(ColorConstants.SURFACE_CARD)
                  .fontColor(ColorConstants.TEXT_PRIMARY)
+                 .placeholderColor(ColorConstants.TEXT_SECONDARY)
                  .borderRadius(16)
                  .padding(16)
-                 .onChange((v: string): void => { this.currentInput = v; })
+                 .onChange((v: string): void => {
+                   this.currentInput = v;
+                   if (v.trim().length > 0) {
+                     this.inputHint = '';
+                   }
+                 })
                  .margin({ bottom: 20 })
               
               Button(this.currentStep === this.questions.length - 1 ? '点燃：转化行动微光' : '深呼吸，继续向内探索')
@@ -109,6 +123,14 @@ export struct IntrospectionWidget {
                  .fontWeight(FontWeight.Bold)
                  .borderRadius(24)
                  .onClick((): void => { this.nextStep(); })
+
+              if (this.inputHint.length > 0) {
+                Text(this.inputHint)
+                  .fontSize(12)
+                  .fontColor(ColorConstants.MINT_CYAN)
+                  .margin({ top: 12 })
+                  .width('100%')
+              }
             }
             .width('100%')
             .padding({ left: 24, right: 24, bottom: 40 })
@@ -134,5 +156,6 @@ export struct IntrospectionWidget {
     }
     .width('100%')
     .height('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 }
