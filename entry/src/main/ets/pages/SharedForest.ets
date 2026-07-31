@@ -3,6 +3,7 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { SharedForestService } from '../service/SharedForestService';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 interface LeafPosition {
   x: number;
@@ -282,7 +283,7 @@ struct SharedForest {
         }
         this.leaves = updatedLeaves;
 
-        promptAction.showToast({ message: '已送上温暖 💚' });
+        promptAction.showToast({ message: '已送上温暖' });
         console.info('SharedForest', '✅ 点赞成功');
       } else {
         promptAction.showToast({ message: '操作失败' });
@@ -310,18 +311,6 @@ struct SharedForest {
 
   build() {
     Stack() {
-      // 背景 - 天空到草地
-      Column()
-        .width('100%')
-        .height('100%')
-        .linearGradient({
-          direction: GradientDirection.Bottom,
-          colors: [['#87CEEB', 0], ['#B2EBF2', 0.3], ['#C8E6C9', 0.6], ['#81C784', 0.8], ['#4CAF50', 1]]
-        })
-
-      // 云朵装饰
-      this.CloudDecoration()
-
       Column() {
         this.TopBar()
 
@@ -332,31 +321,24 @@ struct SharedForest {
         } else {
           this.ForestView()
         }
+
+        Button('分享一段心情')
+          .width('100%')
+          .height(52)
+          .fontSize(15)
+          .fontWeight(600)
+          .fontColor('#FFFFFF')
+          .backgroundColor(EchoColors.PRIMARY)
+          .borderRadius(EchoRadius.MEDIUM)
+          .margin({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 8, bottom: 18 })
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/SharedWrite' });
+          })
       }
       .width('100%')
-      .layoutWeight(1) // Changed from height('100%')
+      .height('100%')
+      .backgroundColor(EchoColors.PAGE)
 
-      // 挂叶子悬浮按钮 (更精美的 UI)
-      Button('挂一片叶子')
-        .width(130)
-        .height(50)
-        .fontSize(15)
-        .fontWeight(500)
-        .fontColor('#FFFFFF')
-        .backgroundColor('#4CAF50')
-        .border({ width: 1, color: 'rgba(255,255,255,0.3)' })
-        .borderRadius(25)
-        .shadow({
-          radius: 16,
-          color: 'rgba(76,175,80,0.5)',
-          offsetY: 6
-        })
-        .position({ x: '60%', y: '88%' })
-        .onClick(() => {
-          router.pushUrl({ url: 'pages/SharedWrite' });
-        })
-
-      // 详情弹窗
       if (this.showDetail && this.selectedLeaf !== null) {
         this.DetailPanel()
       }
@@ -366,93 +348,51 @@ struct SharedForest {
   }
 
   @Builder
-  CloudDecoration() {
-    Stack() {
-      Ellipse()
-        .width(80)
-        .height(40)
-        .fill('rgba(255,255,255,0.7)')
-        .position({ x: '10%', y: '5%' })
-
-      Ellipse()
-        .width(100)
-        .height(50)
-        .fill('rgba(255,255,255,0.6)')
-        .position({ x: '60%', y: '8%' })
-
-      Ellipse()
-        .width(70)
-        .height(35)
-        .fill('rgba(255,255,255,0.5)')
-        .position({ x: '35%', y: '3%' })
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
   TopBar() {
     Row() {
-      Button({ type: ButtonType.Circle }) {
-        Text('返回')
-          .fontSize(12)
-          .fontColor('#1B5E20')
-          .fontWeight(500)
-      }
-      .width(44)
-      .height(44)
-      .backgroundColor('rgba(255,255,255,0.9)')
-      .shadow({
-        radius: 4,
-        color: 'rgba(0,0,0,0.1)',
-        offsetY: 2
-      })
-      .onClick(() => {
-        router.back();
-      })
-
-      Blank()
+      Text('‹')
+        .fontSize(28)
+        .fontWeight(600)
+        .fontColor(EchoColors.TEXT_PRIMARY)
+        .width(40)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .backgroundColor(EchoColors.SURFACE)
+        .border({ width: 1, color: EchoColors.BORDER })
+        .borderRadius(EchoRadius.PILL)
+        .onClick(() => {
+          router.back();
+        })
 
       Column({ space: 2 }) {
         Text('共享森林')
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#1B5E20')
+          .fontColor(EchoColors.TEXT_PRIMARY)
 
-        Row({ space: 4 }) {
-          Circle()
-            .width(6)
-            .height(6)
-            .fill(this.isOnline ? '#4CAF50' : '#F44336')
-
-          Text(this.isOnline ? `${this.leaves.length} 片叶子` : '离线')
-            .fontSize(11)
-            .fontColor(this.isOnline ? '#2E7D32' : '#F44336')
-        }
+        Text(this.isOnline ? `${this.leaves.length} 条公开心情` : '网络未连接')
+          .fontSize(11)
+          .fontColor(this.isOnline ? EchoColors.MINT_TEXT : EchoColors.PINK_TEXT)
       }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
 
-      Blank()
-
-      Button({ type: ButtonType.Circle }) {
-        Text('刷新')
-          .fontSize(12)
-          .fontColor('#1B5E20')
-          .fontWeight(500)
-      }
-      .width(44)
-      .height(44)
-      .backgroundColor('rgba(255,255,255,0.9)')
-      .shadow({
-        radius: 4,
-        color: 'rgba(0,0,0,0.1)',
-        offsetY: 2
-      })
-      .onClick(() => {
-        this.loadLeaves();
-      })
+      Text('刷新')
+        .fontSize(12)
+        .fontWeight(500)
+        .fontColor(EchoColors.PRIMARY_DARK)
+        .width(48)
+        .height(36)
+        .textAlign(TextAlign.Center)
+        .backgroundColor(EchoColors.PRIMARY_SOFT)
+        .borderRadius(EchoRadius.PILL)
+        .onClick(() => {
+          this.loadLeaves();
+        })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 48, bottom: 8 })
+    .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 10 })
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -461,11 +401,11 @@ struct SharedForest {
       LoadingProgress()
         .width(48)
         .height(48)
-        .color('#4CAF50')
+        .color(EchoColors.PRIMARY)
 
-      Text('正在连接森林...')
+      Text('正在载入大家的近况…')
         .fontSize(14)
-        .fontColor('#1B5E20')
+        .fontColor(EchoColors.TEXT_SECONDARY)
     }
     .width('100%')
     .layoutWeight(1)
@@ -474,157 +414,93 @@ struct SharedForest {
 
   @Builder
   EmptyView() {
-    Column({ space: 20 }) {
-      Text('🍃')
-        .fontSize(56)
-        .opacity(0.8)
+    Column({ space: 12 }) {
+      Column()
+        .width(58)
+        .height(58)
+        .backgroundColor(EchoColors.MINT_SOFT)
+        .borderRadius(EchoRadius.LARGE)
 
-      Text('森林里很安静')
+      Text('这里暂时很安静')
         .fontSize(18)
-        .fontColor('#1B5E20')
+        .fontWeight(600)
+        .fontColor(EchoColors.TEXT_PRIMARY)
+        .margin({ top: 8 })
 
-      Text('成为第一个挂叶子的人吧')
-        .fontSize(14)
-        .fontColor('#4CAF50')
-
-      Button('🍃 挂一片叶子')
-        .fontSize(14)
-        .height(44)
-        .backgroundColor('#4CAF50')
-        .borderRadius(22)
-        .margin({ top: 20 })
-        .onClick(() => {
-          router.pushUrl({ url: 'pages/SharedWrite' });
-        })
+      Text('分享第一段心情，也许会有人给你一份温暖')
+        .fontSize(13)
+        .fontColor(EchoColors.TEXT_SECONDARY)
+        .textAlign(TextAlign.Center)
     }
     .width('100%')
     .layoutWeight(1)
+    .padding({ left: 36, right: 36 })
     .justifyContent(FlexAlign.Center)
   }
 
   @Builder
   ForestView() {
-    Column() {
-      // 树的区域
-      Stack() {
-        // 树冠
-        Ellipse()
-          .width('70%')
-          .height(260)
-          .fill('rgba(76,175,80,0.35)')
-          .position({ x: '15%', y: '5%' })
-
-        Ellipse()
-          .width('55%')
-          .height(200)
-          .fill('rgba(56,142,60,0.4)')
-          .position({ x: '22.5%', y: '15%' })
-
-        // 叶子
-        ForEach(this.leaves.slice(0, 50), (leaf: SharedLeafData) => {
-          Text('🍃')
-            .fontSize(this.getLeafSize(leaf.greenLevel))
-            .position({
-              x: `${leaf.position.x * 100}%`,
-              y: `${leaf.position.y * 100}%`
-            })
-            .rotate({ angle: leaf.position.angle })
-            .opacity(0.6 + leaf.greenLevel / 200)
-            .onClick(() => {
-              this.selectedLeaf = leaf;
-              this.showDetail = true;
-            })
-        }, (leaf: SharedLeafData) => leaf.id)
-
-        // 树干
-        Column()
-          .width(80)
-          .height(140)
-          .linearGradient({
-            direction: GradientDirection.Left,
-            colors: [['#5D4037', 0], ['#795548', 0.3], ['#6D4C41', 0.7], ['#4E342E', 1]]
-          })
-          .borderRadius({ topLeft: 15, topRight: 15 })
-          .position({ x: '43%', y: '55%' })
-      }
-      .width('100%')
-      .height('55%')
-      .scale({ x: this.treeScale, y: this.treeScale })
-      .gesture(
-        PinchGesture()
-          .onActionUpdate((event: GestureEvent) => {
-            this.treeScale = Math.max(0.6, Math.min(1.5, event.scale));
-          })
-      )
-
-      // 叶子列表
-      Column() {
-        Scroll() {
-          Column({ space: 10 }) {
-            Row({ space: 8 }) {
-              Text('🍃')
-                .fontSize(14)
-              Text('点击树上的叶子或下方卡片查看详情')
-                .fontSize(12)
-                .fontColor('rgba(255,255,255,0.8)')
-            }
-            .margin({ top: 10, bottom: 6 })
-
-            ForEach(this.leaves, (leaf: SharedLeafData) => {
-              this.LeafCard(leaf)
-            }, (leaf: SharedLeafData) => leaf.id)
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, bottom: 120 }) // Increase bottom padding for the floating button
+    Scroll() {
+      Column({ space: 12 }) {
+        Column({ space: 5 }) {
+          Text('来自此刻的真实心情')
+            .fontSize(22)
+            .fontWeight(700)
+            .fontColor(EchoColors.TEXT_PRIMARY)
+          Text('轻点一条记录，可以阅读完整内容并送上一份温暖')
+            .fontSize(12)
+            .fontColor(EchoColors.TEXT_SECONDARY)
         }
         .width('100%')
-        .height('100%')
-        .scrollBar(BarState.Off)
+        .alignItems(HorizontalAlign.Start)
+        .margin({ bottom: 4 })
+
+        ForEach(this.leaves, (leaf: SharedLeafData) => {
+          this.LeafCard(leaf)
+        }, (leaf: SharedLeafData) => leaf.id)
       }
       .width('100%')
-      .layoutWeight(1)
-      .backgroundColor('rgba(0,0,0,0.35)')
-      .borderRadius({ topLeft: 24, topRight: 24 })
+      .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 12, bottom: 16 })
     }
     .width('100%')
     .layoutWeight(1)
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP]) // removed bottom edge expansion to prevent bottom clipping
+    .scrollBar(BarState.Off)
   }
 
   @Builder
   LeafCard(leaf: SharedLeafData) {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Row() {
-        Text('🍃 ' + leaf.nickname)
+        Text(leaf.nickname)
           .fontSize(13)
-          .fontColor('#4CAF50')
+          .fontColor(EchoColors.MINT_TEXT)
           .fontWeight(FontWeight.Medium)
 
         Blank()
 
         Text(this.formatTime(leaf.timestamp))
           .fontSize(11)
-          .fontColor('rgba(255,255,255,0.6)')
+          .fontColor(EchoColors.TEXT_TERTIARY)
       }
       .width('100%')
 
       Text(leaf.content)
-        .fontSize(14)
-        .fontColor('#FFFFFF')
-        .lineHeight(22)
-        .maxLines(3)
+        .fontSize(15)
+        .fontColor(EchoColors.TEXT_PRIMARY)
+        .lineHeight(23)
+        .maxLines(4)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-      // 绿度条
       Row({ space: 8 }) {
-        Text('💚')
-          .fontSize(12)
+        Text('温暖值')
+          .fontSize(11)
+          .fontColor(EchoColors.TEXT_SECONDARY)
 
         Stack({ alignContent: Alignment.Start }) {
           Row()
             .width('100%')
             .height(6)
-            .backgroundColor('rgba(255,255,255,0.2)')
+            .backgroundColor(EchoColors.SURFACE_MUTED)
             .borderRadius(3)
 
           Row()
@@ -637,14 +513,15 @@ struct SharedForest {
 
         Text(`${leaf.greenLevel}%`)
           .fontSize(11)
-          .fontColor('#4CAF50')
+          .fontColor(EchoColors.MINT_TEXT)
       }
       .width('100%')
     }
     .width('100%')
-    .padding(14)
-    .backgroundColor('rgba(255,255,255,0.12)')
-    .borderRadius(16)
+    .padding(16)
+    .backgroundColor(EchoColors.SURFACE)
+    .border({ width: 1, color: EchoColors.BORDER })
+    .borderRadius(EchoRadius.LARGE)
     .onClick(() => {
       this.selectedLeaf = leaf;
       this.showDetail = true;
@@ -657,7 +534,7 @@ struct SharedForest {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('rgba(0,0,0,0.5)')
+        .backgroundColor(EchoColors.SCRIM)
         .onClick(() => {
           this.showDetail = false;
           this.selectedLeaf = null;
@@ -666,7 +543,7 @@ struct SharedForest {
       Column({ space: 16 }) {
         if (this.selectedLeaf !== null) {
           Row() {
-            Text('🍃 ' + this.selectedLeaf.nickname)
+            Text(this.selectedLeaf.nickname)
               .fontSize(16)
               .fontWeight(FontWeight.Bold)
               .fontColor('#4CAF50')
@@ -693,7 +570,7 @@ struct SharedForest {
           // 绿度显示
           Column({ space: 8 }) {
             Row() {
-              Text('💚 温暖值')
+              Text('温暖值')
                 .fontSize(13)
                 .fontColor('#4CAF50')
 
@@ -733,7 +610,7 @@ struct SharedForest {
           // AI回复
           if (this.selectedLeaf.aiResponse && this.selectedLeaf.aiResponse.length > 0) {
             Column({ space: 6 }) {
-              Text('🌱 小树苗')
+              Text('给你的回应')
                 .fontSize(12)
                 .fontColor('#4CAF50')
 
@@ -750,7 +627,7 @@ struct SharedForest {
           }
 
           // 送温暖按钮
-          Button('💚 送上温暖')
+          Button('送上温暖')
             .width('100%')
             .height(52)
             .fontSize(16)

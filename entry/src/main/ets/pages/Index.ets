@@ -1,13 +1,13 @@
-import { ColorConstants } from '../utils/ColorConstants';
 import { DatabaseService } from '../utils/DatabaseService';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 import { EchoTask } from '../models/EchoTask';
 import { Seed } from '../models/Seed';
-import { TreeHoleWidget } from '../components/TreeHoleWidget';
 import { EchoDrawer } from '../components/EchoDrawer';
 import { SpinnerWidget } from '../components/SpinnerWidget';
-import { SoulSelectionWidget } from '../components/SoulSelectionWidget';
-import { TarotWidget } from '../components/TarotWidget';
 import { IntrospectionWidget } from '../components/IntrospectionWidget';
+import { HomeHeader } from '../components/HomeHeader';
+import { HomePrimaryActions } from '../components/HomePrimaryActions';
+import { HomeToolShelf } from '../components/HomeToolShelf';
 import common from '@ohos.app.ability.common';
 import router from '@ohos.router';
 
@@ -16,8 +16,7 @@ import router from '@ohos.router';
 struct Index {
   @State pendingTasks: EchoTask[] = [];
   @State showDrawer: boolean = false;
-  @State activeTool: string = 'none'; // 'none', 'spinner', 'tarot', etc.
-  // 登录状态监听(只读绑定，由 LoginPage 更新)
+  @State activeTool: string = 'none';
   @StorageProp('isLoggedIn') isLoggedIn: boolean = false;
   @StorageProp('userNickname') userNickname: string = '';
   private dbService: DatabaseService | null = null;
@@ -34,127 +33,39 @@ struct Index {
     }
   }
 
-  async handleNewSeed(content: string) {
-    let seed: Seed = {
-      content: content,
-      source: 'TREE_HOLE',
-      state: 1,
-      created_at: new Date().getTime()
-    };
-    if (!this.dbService) return;
-    let seedId = await this.dbService.insertSeed(seed);
-
-    let task: EchoTask = {
-      seed_id: seedId,
-      action: '树洞回声: ' + content,
-      is_completed: false,
-      created_at: new Date().getTime()
-    };
-    await this.dbService.insertTask(task);
-
-    await this.loadTasks();
-    this.showDrawer = true;
-  }
-
   async handleSpinnerResult(result: string) {
     this.activeTool = 'none';
-
-    // 把转盘结果存为一个种子，并自动创建一条回声任务
-    let seed: Seed = {
-      content: '转盘抽取结果',
-      source: 'SPINNER',
-      state: 1,
-      created_at: new Date().getTime()
-    };
-    if (!this.dbService) return;
-    let seedId = await this.dbService.insertSeed(seed);
-
-    let task: EchoTask = {
-      seed_id: seedId,
-      action: result, // 例如 "去散步"
-      is_completed: false,
-      created_at: new Date().getTime()
-    };
-    await this.dbService.insertTask(task);
-
-    await this.loadTasks();
-    this.showDrawer = true;
-  }
-
-  async handleSoulResult(result: string) {
-    this.activeTool = 'none';
-    let seed: Seed = {
-      content: '灵魂选择结果',
-      source: 'CHOICE',
-      state: 1,
-      created_at: new Date().getTime()
-    };
-    if (!this.dbService) return;
-    let seedId = await this.dbService.insertSeed(seed);
-
-    let task: EchoTask = {
-      seed_id: seedId,
-      action: '灵魂选择: ' + result,
-      is_completed: false,
-      created_at: new Date().getTime()
-    };
-    await this.dbService.insertTask(task);
-
-    await this.loadTasks();
-    this.showDrawer = true;
-  }
-
-  async handleTarotResult(result: string) {
-    this.activeTool = 'none';
-    let seed: Seed = {
-      content: '塔罗占卜结果',
-      source: 'TAROT',
-      state: 1,
-      created_at: new Date().getTime()
-    };
-    if (!this.dbService) return;
-    let seedId = await this.dbService.insertSeed(seed);
-
-    let task: EchoTask = {
-      seed_id: seedId,
-      action: '塔罗指引: ' + result,
-      is_completed: false,
-      created_at: new Date().getTime()
-    };
-    await this.dbService.insertTask(task);
-
-    await this.loadTasks();
-    this.showDrawer = true;
+    await this.saveToolResult('今天的小决定', 'SPINNER', result);
   }
 
   async handleIntroResult(result: string) {
     this.activeTool = 'none';
-    let seed: Seed = {
-      content: '内省探索结果',
-      source: 'INTROSPECTION',
-      state: 1,
-      created_at: new Date().getTime()
-    };
-    if (!this.dbService) return;
-    let seedId = await this.dbService.insertSeed(seed);
+    await this.saveToolResult('一次向内的观察', 'INTROSPECTION', '留意今天的感受：' + result);
+  }
 
-    let task: EchoTask = {
+  async saveToolResult(content: string, source: 'SPINNER' | 'CHOICE' | 'INTROSPECTION', action: string) {
+    if (!this.dbService) return;
+    const seed: Seed = {
+      content: content,
+      source: source,
+      state: 1,
+      created_at: Date.now()
+    };
+    const seedId = await this.dbService.insertSeed(seed);
+    const task: EchoTask = {
       seed_id: seedId,
-      action: '内省感悟: ' + result,
+      action: action,
       is_completed: false,
-      created_at: new Date().getTime()
+      created_at: Date.now()
     };
     await this.dbService.insertTask(task);
-
     await this.loadTasks();
     this.showDrawer = true;
   }
 
   async handleComplete(task: EchoTask) {
-    if (!this.dbService || task.id === undefined) {
-      return;
-    }
-    const isUpdated = await this.dbService.markTaskCompleted(task.id, new Date().getTime());
+    if (!this.dbService || task.id === undefined) return;
+    const isUpdated = await this.dbService.markTaskCompleted(task.id, Date.now());
     if (isUpdated) {
       await this.loadTasks();
     }
@@ -162,186 +73,168 @@ struct Index {
 
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-
       if (this.activeTool === 'none') {
         Column() {
-          Blank().height(140)
+          Scroll() {
+            Column({ space: EchoSpacing.SECTION }) {
+              HomeHeader({
+                nickname: this.userNickname,
+                isLoggedIn: this.isLoggedIn,
+                onProfileClick: (): void => {
+                  router.pushUrl({ url: 'pages/LoginPage' });
+                }
+              })
 
-          Row({ space: 16 }) {
-            this.MagicButton('\u5185\u7701', '#FF6B6B', (): void => {
-              console.info('[Echoing] Clicked Introspection button, setting activeTool to intro');
-              this.activeTool = 'intro';
-            })
-            this.MagicButton('\u7075\u9b42', '#FFD93D', (): void => {
-              this.activeTool = 'soul';
-            })
-            this.MagicButton('\u8da3\u9009', '#B89CD4', (): void => {
-              router.pushUrl({ url: 'pages/FunChoiceView' });
-            })
-            this.MagicButton('\u5854\u7f57', '#6BCB77', (): void => {
-              router.pushUrl({ url: 'pages/TarotView' });
-            })
-            this.MagicButton('\u8f6c\u76d8', '#4D96FF', (): void => {
-              this.activeTool = 'spinner';
-            })
-          }
-          Blank().height(50)
+              HomePrimaryActions({
+                onWriteClick: (): void => {
+                  router.pushUrl({ url: 'pages/PrivateWrite' });
+                },
+                onPrivateTreeClick: (): void => {
+                  router.pushUrl({ url: 'pages/PrivateTree' });
+                },
+                onSharedForestClick: (): void => {
+                  router.pushUrl({ url: 'pages/SharedForest' });
+                }
+              })
 
-          Column() {
-            Row() {
-              Column() {
-                Text('\u6b63\u5ff5\u6811')
-                  .fontSize(22)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(ColorConstants.TEXT_PRIMARY)
-                  .margin({ bottom: 4 })
-                Text('\u6bcf\u65e5\u6b63\u5ff5\u7ec3\u4e60\uff0c\u6ecb\u517b\u5185\u5fc3')
-                  .fontSize(12)
-                  .fontColor(ColorConstants.MINT_CYAN)
-              }.alignItems(HorizontalAlign.Start)
+              HomeToolShelf({
+                onTarotClick: (): void => {
+                  router.pushUrl({ url: 'pages/TarotView' });
+                },
+                onSpinnerClick: (): void => {
+                  this.activeTool = 'spinner';
+                },
+                onChoiceClick: (): void => {
+                  router.pushUrl({ url: 'pages/FunChoiceView' });
+                },
+                onReflectClick: (): void => {
+                  this.activeTool = 'intro';
+                },
+                onAiClick: (): void => {
+                  router.pushUrl({ url: 'pages/AIDialogPage' });
+                }
+              })
 
-              Blank()
+              Row() {
+                Column({ space: 5 }) {
+                  Text('正念树')
+                    .fontSize(17)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(EchoColors.TEXT_PRIMARY)
+                  Text('每天留一点时间，照顾自己的内心')
+                    .fontSize(13)
+                    .fontColor(EchoColors.TEXT_SECONDARY)
+                }
+                .alignItems(HorizontalAlign.Start)
 
-              Text('->')
-                .fontSize(20)
-                .fontColor(ColorConstants.MINT_CYAN)
+                Blank()
+
+                Text('进入')
+                  .fontSize(13)
+                  .fontColor(EchoColors.PRIMARY)
+              }
+              .width('100%')
+              .padding(18)
+              .backgroundColor(EchoColors.SURFACE)
+              .borderRadius(EchoRadius.LARGE)
+              .border({ width: 1, color: EchoColors.BORDER })
+              .onClick((): void => {
+                router.pushUrl({ url: 'pages/ZzuMindfulTree' });
+              })
+
+              Blank().height(86)
             }
             .width('100%')
-            .padding(24)
-            .backgroundColor(ColorConstants.SURFACE_GLASS)
-            .borderRadius(20)
-            .border({ width: 1, color: 'rgba(0, 240, 255, 0.2)' })
-            .onClick((): void => {
-              router.pushUrl({ url: 'pages/ZzuMindfulTree' })
+            .padding({
+              left: EchoSpacing.PAGE,
+              right: EchoSpacing.PAGE,
+              top: 54
             })
           }
-          .width('90%')
-          Blank()
+          .scrollBar(BarState.Off)
+          .width('100%')
+          .layoutWeight(1)
         }
         .width('100%')
         .height('100%')
-        .backgroundColor(ColorConstants.BACKGROUND_DARK)
-        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(EchoColors.PAGE)
         .onClick((): void => {
           if (this.showDrawer) this.showDrawer = false;
         })
 
-        Row() {
-          Row({ space: 10 }) {
-            Image($r('app.media.echoing_icon'))
-              .width(40)
-              .height(40)
-              .borderRadius(20)
-              .border({ width: 2, color: ColorConstants.MINT_CYAN })
-              .shadow({ radius: 10, color: 'rgba(0, 240, 255, 0.2)' })
-
-            Column() {
-              Text('Echoing')
-                .fontColor(ColorConstants.TEXT_PRIMARY)
-                .fontSize(18)
-                .fontWeight(FontWeight.Bold)
-                .letterSpacing(2)
-              Text(this.isLoggedIn && this.userNickname.length > 0 ? this.userNickname + ' \u00B7 \u8046\u542c\u5185\u5fc3\u7684\u56de\u54cd' : '\u8046\u542c\u5185\u5fc3\u7684\u56de\u54cd')
-                .fontColor(ColorConstants.TEXT_SECONDARY)
-                .fontSize(11)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (!this.showDrawer) {
+          Row() {
+            Column({ space: 3 }) {
+              Text(this.pendingTasks.length > 0 ? `${this.pendingTasks.length} 件事等你回应` : '此刻没有待办')
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(EchoColors.TEXT_PRIMARY)
+              Text(this.pendingTasks.length > 0 ? '轻触查看' : '安心感受现在')
+                .fontSize(12)
+                .fontColor(EchoColors.TEXT_SECONDARY)
             }
             .alignItems(HorizontalAlign.Start)
-          }
-          .padding({ left: 8, right: 12, top: 6, bottom: 6 })
-          .borderRadius(22)
-          .backgroundColor('rgba(22, 27, 34, 0.42)')
-          .border({ width: 1, color: ColorConstants.MINT_CYAN_DIM })
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/LoginPage' });
-          })
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 40 })
-        .position({ x: 0, y: 0 })
-        .zIndex(10)
-      }
-      // 底部抽屉
-      Column() {
-        if (!this.showDrawer) {
-          Row()
-            .width('30%')
-            .height(6)
-            .backgroundColor(ColorConstants.MINT_CYAN_DIM)
-            .borderRadius(3)
-            .margin({ bottom: 20 })
-            .onClick((): void => {
-              this.showDrawer = true;
-            })
-        } else {
-          EchoDrawer({
-            tasks: $pendingTasks,
-            onCompleteTask: (task: EchoTask): void => { this.handleComplete(task); }
-          })
-          .height('60%')
-          .transition({ type: TransitionType.Insert, translate: { y: 200 } })
-          .transition({ type: TransitionType.Delete, translate: { y: 500 } })
-        }
-      }
-      .width('100%')
-      .animation({ duration: 400, curve: Curve.FastOutSlowIn })
 
-      // 功能组件覆盖层
+            Blank()
+
+            Text('展开')
+              .fontSize(13)
+              .fontColor(EchoColors.PRIMARY)
+          }
+          .width('88%')
+          .height(62)
+          .padding({ left: 18, right: 18 })
+          .margin({ bottom: 18 })
+          .backgroundColor(EchoColors.SURFACE)
+          .borderRadius(EchoRadius.LARGE)
+          .border({ width: 1, color: EchoColors.BORDER })
+          .onClick((): void => {
+            this.showDrawer = true;
+          })
+        } else {
+          Column() {
+            EchoDrawer({
+              tasks: $pendingTasks,
+              onCompleteTask: (task: EchoTask): void => {
+                this.handleComplete(task);
+              }
+            })
+          }
+          .width('100%')
+          .height('62%')
+          .padding({ top: 8 })
+          .backgroundColor(EchoColors.SURFACE)
+          .borderRadius({ topLeft: EchoRadius.LARGE, topRight: EchoRadius.LARGE })
+          .transition({ type: TransitionType.Insert, translate: { y: 260 } })
+          .transition({ type: TransitionType.Delete, translate: { y: 520 } })
+        }
+      }
+
       if (this.activeTool === 'spinner') {
         SpinnerWidget({
-          onResult: (result: string): void => { this.handleSpinnerResult(result); },
-          onClose: (): void => { this.activeTool = 'none'; }
+          onResult: (result: string): void => {
+            this.handleSpinnerResult(result);
+          },
+          onClose: (): void => {
+            this.activeTool = 'none';
+          }
         })
-        .transition({ type: TransitionType.Insert, opacity: 1 })
-        .transition({ type: TransitionType.Delete, opacity: 0 })
-      }
-
-      if (this.activeTool === 'soul') {
-        SoulSelectionWidget({
-          onResult: (result: string): void => { this.handleSoulResult(result); },
-          onClose: (): void => { this.activeTool = 'none'; }
-        })
-        .transition({ type: TransitionType.Insert, opacity: 1 })
-        .transition({ type: TransitionType.Delete, opacity: 0 })
-      }
-
-      if (this.activeTool === 'tarot') {
-        TarotWidget({
-          onResult: (result: string): void => { this.handleTarotResult(result); },
-          onClose: (): void => { this.activeTool = 'none'; }
-        })
-        .transition({ type: TransitionType.Insert, opacity: 1 })
-        .transition({ type: TransitionType.Delete, opacity: 0 })
       }
 
       if (this.activeTool === 'intro') {
         IntrospectionWidget({
-          onResult: (result: string): void => { this.handleIntroResult(result); },
-          onClose: (): void => { this.activeTool = 'none'; }
+          onResult: (result: string): void => {
+            this.handleIntroResult(result);
+          },
+          onClose: (): void => {
+            this.activeTool = 'none';
+          }
         })
-        .transition({ type: TransitionType.Insert, opacity: 1 })
-        .transition({ type: TransitionType.Delete, opacity: 0 })
       }
-
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(ColorConstants.BACKGROUND_DARK)
+    .backgroundColor(EchoColors.PAGE)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-  }
-
-  @Builder MagicButton(title: string, color: string, onClickAction: () => void) {
-    Column() {
-      Circle({ width: 48, height: 48 })
-        .fill(ColorConstants.SURFACE_CARD)
-        .stroke(color)
-        .strokeWidth(2)
-      Text(title)
-        .fontSize(12)
-        .fontColor(ColorConstants.TEXT_PRIMARY)
-        .margin({ top: 8 })
-    }
-    .onClick(onClickAction)
   }
 }

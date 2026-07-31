@@ -5,6 +5,7 @@ import promptAction from '@ohos.promptAction';
 import { AIResponseGenerator } from '../utils/AIResponseGenerator';
 import { KeywordDetector, CrisisDetectionResult, CRISIS_HELP_INFO } from '../utils/KeywordDetector';
 import { SharedForestService } from '../service/SharedForestService';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 @Entry
 @Component
@@ -75,12 +76,7 @@ struct SharedWrite {
       : this.generateNickname();
 
     try {
-      const response = await SharedForestService.submitLeaf(
-        this.inputContent.trim(),
-        nickname,
-        this.currentAccountKey,
-        this.userNickname
-      );
+      const response = await SharedForestService.submitLeaf(this.inputContent.trim(), nickname);
 
       if (response.responseCode === 200) {
         const aiRes: string = AIResponseGenerator.generate(this.inputContent);
@@ -89,7 +85,7 @@ struct SharedWrite {
         this.inputContent = '';
         this.inputNickname = '';
 
-        promptAction.showToast({ message: '叶子已飘向森林 🍃' });
+        promptAction.showToast({ message: '已分享到共享森林' });
       } else {
         promptAction.showToast({ message: '发送失败，请重试' });
       }
@@ -103,100 +99,68 @@ struct SharedWrite {
 
   build() {
     Stack() {
-      // 背景
-      Column()
-        .width('100%')
-        .height('100%')
-        .linearGradient({
-          direction: GradientDirection.Bottom,
-          colors: [['#F0F8F5', 0], ['#E0F2F1', 0.5], ['#C8E6C9', 1]]
-        })
-
-      // 装饰叶子
-      this.LeafDecoration()
-
       Column() {
         this.TopBar()
 
-        if (this.showAIResponse) {
-          this.AIResponseCard()
-        }
-
         Scroll() {
-          Column({ space: 18 }) {
-            // 提示区域
-            Column({ space: 8 }) {
-              Text('🍃 挂一片叶子')
-                .fontSize(24)
+          Column({ space: 16 }) {
+            if (this.showAIResponse) {
+              this.AIResponseCard()
+            }
+
+            Column({ space: 6 }) {
+              Text('分享一段心情')
+                .fontSize(26)
                 .fontWeight(FontWeight.Bold)
-                .fontColor('#1B5E20')
+                .fontColor(EchoColors.TEXT_PRIMARY)
 
-              Text('让你的心情随风飘向森林')
-                .fontSize(14)
-                .fontColor('#4CAF50')
-
-              // 连接状态
-              Row({ space: 6 }) {
-                Circle()
-                  .width(8)
-                  .height(8)
-                  .fill(this.isOnline ? '#4CAF50' : '#F44336')
-
-                Text(this.isOnline ? '已连接校园网' : '未连接，请检查网络')
-                  .fontSize(12)
-                  .fontColor(this.isOnline ? '#4CAF50' : '#F44336')
-              }
-              .margin({ top: 8 })
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
-            .margin({ top: 48 })
-
-            // 昵称输入
-            Column({ space: 8 }) {
-              Text('你的昵称')
+              Text('它会以昵称或匿名的方式出现在共享森林')
                 .fontSize(13)
-                .fontColor('#666666')
+                .fontColor(EchoColors.TEXT_SECONDARY)
 
-              Row() {
-
-                TextInput({ placeholder: '匿名小树叶', text: this.inputNickname })
-                  .fontSize(15)
-                  .maxLength(12)
-                  .backgroundColor(Color.Transparent)
-                  .fontColor('#333333')
-                  .placeholderColor('#999999')
-                  .layoutWeight(1)
-                  .onChange((value: string) => {
-                    this.inputNickname = value;
-                  })
-              }
-              .width('100%')
-              .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-              .backgroundColor('#FFFFFF')
-              .borderRadius(16)
-              .shadow({
-                radius: 8,
-                color: 'rgba(0,0,0,0.08)',
-                offsetY: 2
-              })
+              Text(this.isOnline ? '网络已连接' : '网络未连接，请检查后再发布')
+                .fontSize(11)
+                .fontColor(this.isOnline ? EchoColors.MINT_TEXT : EchoColors.PINK_TEXT)
+                .margin({ top: 4 })
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
 
-            // 内容输入
+            Column({ space: 8 }) {
+              Text('显示名称')
+                .fontSize(13)
+                .fontWeight(500)
+                .fontColor(EchoColors.TEXT_SECONDARY)
+
+              TextInput({ placeholder: '留空将自动生成匿名昵称', text: this.inputNickname })
+                .fontSize(15)
+                .maxLength(12)
+                .height(48)
+                .backgroundColor(EchoColors.SURFACE)
+                .fontColor(EchoColors.TEXT_PRIMARY)
+                .placeholderColor(EchoColors.TEXT_TERTIARY)
+                .border({ width: 1, color: EchoColors.BORDER })
+                .borderRadius(EchoRadius.SMALL)
+                .onChange((value: string) => {
+                  this.inputNickname = value;
+                })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+
             Column({ space: 8 }) {
               Text('想说的话')
                 .fontSize(13)
-                .fontColor('#666666')
+                .fontWeight(500)
+                .fontColor(EchoColors.TEXT_SECONDARY)
 
               Column() {
-                TextArea({ placeholder: '今天有什么想分享的吗？\n你的心情会化作叶子，飘向校园的心灵森林...', text: this.inputContent })
+                TextArea({ placeholder: '今天有什么想分享的吗？', text: this.inputContent })
                   .fontSize(15)
-                  .fontColor('#333333')
-                  .placeholderColor('#999999')
+                  .fontColor(EchoColors.TEXT_PRIMARY)
+                  .placeholderColor(EchoColors.TEXT_TERTIARY)
                   .backgroundColor(Color.Transparent)
-                  .height(160)
+                  .height(180)
                   .maxLength(500)
                   .onChange((value: string) => {
                     this.inputContent = value;
@@ -206,113 +170,82 @@ struct SharedWrite {
                   Blank()
                   Text(this.inputContent.length.toString() + '/500')
                     .fontSize(11)
-                    .fontColor('#999999')
+                    .fontColor(EchoColors.TEXT_TERTIARY)
                 }
                 .width('100%')
                 .padding({ right: 12, bottom: 8 })
               }
               .width('100%')
-              .backgroundColor('#FFFFFF')
-              .borderRadius(16)
-              .shadow({
-                radius: 8,
-                color: 'rgba(0,0,0,0.08)',
-                offsetY: 2
-              })
+              .backgroundColor(EchoColors.SURFACE)
+              .border({ width: 1, color: EchoColors.BORDER })
+              .borderRadius(EchoRadius.LARGE)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
 
-            // 提示信息
-            Column({ space: 6 }) {
-              Row({ space: 8 }) {
-                Text('完全匿名，不会显示个人信息')
-                  .fontSize(12)
-                  .fontColor('#666666')
-              }
-
-              Row({ space: 8 }) {
-                Text('叶子会在7天后自动消失')
-                  .fontSize(12)
-                  .fontColor('#666666')
-              }
-
-              Row({ space: 8 }) {
-                Text('仅限校内网络访问')
-                  .fontSize(12)
-                  .fontColor('#666666')
-              }
+            Column({ space: 7 }) {
+              Text('发布说明')
+                .fontSize(13)
+                .fontWeight(600)
+                .fontColor(EchoColors.MINT_TEXT)
+              Text('不会显示账号信息；内容将在 7 天后自动消失；当前仅限校内网络访问。')
+                .fontSize(12)
+                .fontColor(EchoColors.TEXT_SECONDARY)
+                .lineHeight(20)
             }
             .width('100%')
             .padding(16)
-            .backgroundColor('rgba(76,175,80,0.1)')
-            .borderRadius(14)
+            .backgroundColor(EchoColors.MINT_SOFT)
+            .borderRadius(EchoRadius.MEDIUM)
             .alignItems(HorizontalAlign.Start)
 
-            // 心理援助信息卡片（始终显示）
-            Column({ space: 10 }) {
-              Row({ space: 8 }) {
-                Text('心理支持')
-                  .fontSize(14)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor('#1B5E20')
-              }
-
+            Column({ space: 8 }) {
+              Text('需要支持时')
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(EchoColors.TEXT_PRIMARY)
               Text('如果你正在经历困难，记得你不是一个人')
                 .fontSize(13)
-                .fontColor('#555555')
-
-              Row({ space: 12 }) {
-                Text(CRISIS_HELP_INFO.name)
-                  .fontSize(12)
-                  .fontColor('#4CAF50')
-                Text(CRISIS_HELP_INFO.hotline)
-                  .fontSize(13)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor('#1B5E20')
-              }
+                .fontColor(EchoColors.TEXT_SECONDARY)
+              Text(CRISIS_HELP_INFO.name + '  ' + CRISIS_HELP_INFO.hotline)
+                .fontSize(13)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(EchoColors.PRIMARY_DARK)
             }
             .width('100%')
-            .padding(14)
-            .backgroundColor('rgba(76,175,80,0.08)')
-            .borderRadius(14)
+            .padding(16)
+            .backgroundColor(EchoColors.PRIMARY_SOFT)
+            .borderRadius(EchoRadius.MEDIUM)
             .alignItems(HorizontalAlign.Start)
+
+            Button(this.isSubmitting ? '正在发布…' : '发布到共享森林')
+              .width('100%')
+              .height(52)
+              .fontSize(15)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#FFFFFF')
+              .backgroundColor(this.inputContent.trim().length > 0 && this.isOnline
+                ? EchoColors.PRIMARY : EchoColors.TEXT_TERTIARY)
+              .borderRadius(EchoRadius.MEDIUM)
+              .enabled(this.inputContent.trim().length > 0 && this.isOnline && !this.isSubmitting)
+              .onClick(() => {
+                this.handleSubmit();
+              })
           }
           .width('100%')
-          .padding({ left: 20, right: 20, bottom: 120 })
+          .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 18, bottom: 36 })
         }
         .layoutWeight(1)
         .scrollBar(BarState.Off)
       }
       .width('100%')
       .height('100%')
+      .backgroundColor(EchoColors.PAGE)
 
-      // 提交按钮
-      Button('🍃 飘向森林')
-        .width('85%')
-        .height(54)
-        .fontSize(17)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#FFFFFF')
-        .backgroundColor(this.inputContent.trim().length > 0 && this.isOnline ? '#4CAF50' : '#CCCCCC')
-        .borderRadius(27)
-        .shadow({
-          radius: 16,
-          color: 'rgba(76,175,80,0.4)',
-          offsetY: 6
-        })
-        .position({ x: '7.5%', y: '88%' })
-        .enabled(this.inputContent.trim().length > 0 && this.isOnline && !this.isSubmitting)
-        .onClick(() => {
-          this.handleSubmit();
-        })
-
-      // 严重危机弹窗（不允许发布）
       if (this.showCrisisDialog) {
         this.SevereCrisisDialog()
       }
 
-      // 轻度关怀弹窗（可以选择继续发布）
       if (this.showMildWarning) {
         this.MildWarningDialog()
       }
@@ -514,7 +447,7 @@ struct SharedWrite {
       }
       .width('100%')
 
-      Text('你可以随时寻求帮助 💚')
+      Text('你可以随时寻求帮助')
         .fontSize(12)
         .fontColor('#888888')
     }
@@ -526,94 +459,63 @@ struct SharedWrite {
   }
 
   @Builder
-  LeafDecoration() {
-    Stack() {
-      ForEach([1, 2, 3, 4, 5, 6], (i: number) => {
-        Text('🍃')
-          .fontSize(16 + i * 2)
-          .opacity(0.15 + i * 0.05)
-          .position({
-            x: (10 + i * 15).toString() + '%',
-            y: (5 + (i * 8) % 20).toString() + '%'
-          })
-          .rotate({ angle: -20 + i * 15 })
-      }, (i: number) => i.toString())
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
   TopBar() {
     Row() {
-      Button({ type: ButtonType.Circle }) {
-        Text('返回')
-          .fontSize(12)
-          .fontColor('#1B5E20')
-          .fontWeight(500)
-      }
-      .width(44)
-      .height(44)
-      .backgroundColor('rgba(255,255,255,0.9)')
-      .shadow({
-        radius: 4,
-        color: 'rgba(0,0,0,0.1)',
-        offsetY: 2
-      })
-      .onClick(() => {
-        router.back();
-      })
+      Text('‹')
+        .fontSize(28)
+        .fontWeight(600)
+        .fontColor(EchoColors.TEXT_PRIMARY)
+        .width(40)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .backgroundColor(EchoColors.SURFACE)
+        .border({ width: 1, color: EchoColors.BORDER })
+        .borderRadius(EchoRadius.PILL)
+        .onClick(() => {
+          router.back();
+        })
 
       Blank()
 
-      Text('挂叶子')
-        .fontSize(18)
+      Text('共享森林')
+        .fontSize(17)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#1B5E20')
+        .fontColor(EchoColors.TEXT_PRIMARY)
 
       Blank()
 
       Column()
-        .width(44)
-        .height(44)
+        .width(40)
+        .height(40)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+    .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 8 })
   }
 
   @Builder
   AIResponseCard() {
-    Column({ space: 10 }) {
-      Row({ space: 8 }) {
-        Text('小树苗说')
-          .fontSize(15)
+    Column({ space: 8 }) {
+      Row() {
+        Text('给你的回应')
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#4CAF50')
+          .fontColor(EchoColors.MINT_TEXT)
+        Blank()
+        Text('关闭')
+          .fontSize(11)
+          .fontColor(EchoColors.TEXT_TERTIARY)
       }
+      .width('100%')
 
       Text(this.aiResponse)
         .fontSize(14)
-        .fontColor('#333333')
-        .lineHeight(24)
-
-      Row() {
-        Blank()
-        Text('点击关闭')
-          .fontSize(11)
-          .fontColor('#999999')
-      }
-      .width('100%')
+        .fontColor(EchoColors.TEXT_SECONDARY)
+        .lineHeight(23)
     }
-    .width('90%')
-    .padding(18)
-    .margin({ top: 12 })
-    .backgroundColor('#FFFFFF')
-    .borderRadius(18)
-    .shadow({
-      radius: 12,
-      color: 'rgba(76,175,80,0.2)',
-      offsetY: 4
-    })
+    .width('100%')
+    .padding(16)
+    .backgroundColor(EchoColors.MINT_SOFT)
+    .borderRadius(EchoRadius.LARGE)
     .onClick(() => {
       this.showAIResponse = false;
     })

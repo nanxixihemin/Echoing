@@ -4,6 +4,7 @@ import { window } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import { initialize } from '@hw-agconnect/hmcore';
 import dataPreferences from '@ohos.data.preferences';
+import { AuthSessionService, EchoingUser } from '../service/AuthSessionService';
 
 const DOMAIN = 0x0000;
 
@@ -30,48 +31,6 @@ export default class EntryAbility extends UIAbility {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
-    // 设置窗口为沉浸式全屏布局（解决全面屏下顶部状态栏和底部导航条呈现白边的问题）
-    windowStage.getMainWindow((err, data) => {
-      if (!err.code) {
-        let windowClass = data;
-        
-        // 设置窗口背景色为深色，防止任何瞬间出现白色闪烁/白底
-        windowClass.setWindowBackgroundColor('#050810', (colorErr) => {
-          if (colorErr.code) {
-            hilog.error(DOMAIN, 'testTag', 'Failed to set window background color. Cause: %{public}s', JSON.stringify(colorErr));
-          } else {
-            hilog.info(DOMAIN, 'testTag', 'Succeeded in setting window background color.');
-          }
-        });
-
-        // 启用沉浸式全屏布局
-        windowClass.setWindowLayoutFullScreen(true, (fullErr) => {
-          if (fullErr.code) {
-            hilog.error(DOMAIN, 'testTag', 'Failed to set full-screen. Cause: %{public}s', JSON.stringify(fullErr));
-          } else {
-            hilog.info(DOMAIN, 'testTag', 'Succeeded in setting full-screen layout.');
-            
-            // 将状态栏和导航栏背景设为全透明，同时强制状态栏文字与图标为白色（高对比度）
-            let sysBarProps: window.SystemBarProperties = {
-              statusBarColor: '#00000000',
-              navigationBarColor: '#00000000',
-              statusBarContentColor: '#FFFFFF',
-              navigationBarContentColor: '#FFFFFF'
-            };
-            windowClass.setWindowSystemBarProperties(sysBarProps, (barErr) => {
-              if (barErr.code) {
-                hilog.error(DOMAIN, 'testTag', 'Failed to set system bar properties. Cause: %{public}s', JSON.stringify(barErr));
-              } else {
-                hilog.info(DOMAIN, 'testTag', 'Succeeded in setting system bar properties.');
-              }
-            });
-          }
-        });
-      } else {
-        hilog.error(DOMAIN, 'testTag', 'Failed to obtain main window. Cause: %{public}s', JSON.stringify(err));
-      }
-    });
-
     // 初始化 AGC SDK：必须手动读取 agconnect-services.json 传入
     try {
       let resMgr = this.context.resourceManager;
@@ -92,7 +51,9 @@ export default class EntryAbility extends UIAbility {
 
     // 从 Preferences 恢复登录状态到 AppStorage
     // Restore App user state before choosing the first page.
-    this.restoreLoginState().then((profileReady: boolean) => {
+    AuthSessionService.getInstance().initialize(this.context).then((authenticated: boolean) => {
+      return this.restoreLoginState(authenticated);
+    }).then((profileReady: boolean) => {
       const startPage: string = profileReady ? 'pages/Index' : 'pages/LoginPage';
       windowStage.loadContent(startPage, (err) => {
         if (err.code) {
@@ -100,15 +61,37 @@ export default class EntryAbility extends UIAbility {
           return;
         }
         hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content: %{public}s', startPage);
+        this.configureMainWindow(windowStage);
       });
     }).catch((err: Error) => {
       hilog.error(DOMAIN, 'testTag', 'Failed to choose initial page. Cause: %{public}s', err.message);
       windowStage.loadContent('pages/LoginPage', (loadErr) => {
         if (loadErr.code) {
           hilog.error(DOMAIN, 'testTag', 'Failed to load fallback content. Cause: %{public}s', JSON.stringify(loadErr));
+          return;
         }
+        this.configureMainWindow(windowStage);
       });
     });
+  }
+
+  private async configureMainWindow(windowStage: window.WindowStage): Promise<void> {
+    try {
+      const mainWindow: window.Window = await windowStage.getMainWindow();
+      mainWindow.setWindowBackgroundColor('#050810');
+      await mainWindow.setWindowLayoutFullScreen(true);
+      const systemBarProperties: window.SystemBarProperties = {
+        statusBarColor: '#00000000',
+        navigationBarColor: '#00000000',
+        statusBarContentColor: '#FFFFFF',
+        navigationBarContentColor: '#FFFFFF'
+      };
+      await mainWindow.setWindowSystemBarProperties(systemBarProperties);
+      hilog.info(DOMAIN, 'testTag', 'Succeeded in configuring the main window.');
+    } catch (err) {
+      const message: string = err instanceof Error ? err.message : JSON.stringify(err);
+      hilog.error(DOMAIN, 'testTag', 'Failed to configure the main window. Cause: %{public}s', message);
+    }
   }
 
   onWindowStageDestroy(): void {
@@ -126,26 +109,26 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
 
-  private async restoreLoginState(): Promise<boolean> {
+  private async restoreLoginState(authenticated: boolean): Promise<boolean> {
     try {
+      const currentUser: EchoingUser | null = AuthSessionService.getInstance().getCurrentUser();
+      if (!authenticated || currentUser === null) {
+        return false;
+      }
       const prefs = await dataPreferences.getPreferences(this.context, 'echoing_user');
-      const logged: dataPreferences.ValueType = await prefs.get('isLoggedIn', false);
-      const accountKey: dataPreferences.ValueType = await prefs.get('accountKey', '');
-      const normalizedLogged: boolean = logged === true;
-      const normalizedAccountKey: string = typeof accountKey === 'string' ? accountKey : String(accountKey);
-      const nick: dataPreferences.ValueType = normalizedAccountKey.length > 0 ?
-        await prefs.get('profile.' + normalizedAccountKey + '.nickname', '') : '';
-      const bio: dataPreferences.ValueType = normalizedAccountKey.length > 0 ?
-        await prefs.get('profile.' + normalizedAccountKey + '.bio', '') : '';
-      const normalizedNick: string = typeof nick === 'string' ? nick : String(nick);
-      const normalizedBio: string = typeof bio === 'string' ? bio : String(bio);
-      AppStorage.setOrCreate<boolean>('isLoggedIn', normalizedLogged);
+      const nick: dataPreferences.ValueType = await prefs.get(
+        'profile.' + currentUser.id + '.nickname', currentUser.nickname);
+      const bio: dataPreferences.ValueType = await prefs.get(
+        'profile.' + currentUser.id + '.bio', currentUser.bio);
+      const normalizedNick: string = typeof nick === 'string' ? nick : currentUser.nickname;
+      const normalizedBio: string = typeof bio === 'string' ? bio : currentUser.bio;
+      AppStorage.setOrCreate<boolean>('isLoggedIn', true);
       AppStorage.setOrCreate<string>('userNickname', normalizedNick);
       AppStorage.setOrCreate<string>('userBio', normalizedBio);
-      AppStorage.setOrCreate<string>('currentAccountKey', normalizedAccountKey);
+      AppStorage.setOrCreate<string>('currentAccountKey', currentUser.id);
       hilog.info(DOMAIN, 'testTag', 'Restored login state: isLoggedIn=%{public}s, nick=%{public}s',
-        String(normalizedLogged), normalizedNick);
-      return normalizedLogged && normalizedAccountKey.length > 0 && normalizedNick.trim().length > 0;
+        String(true), normalizedNick);
+      return normalizedNick.trim().length > 0;
     } catch (err) {
       AppStorage.setOrCreate<boolean>('isLoggedIn', false);
       AppStorage.setOrCreate<string>('userNickname', '');

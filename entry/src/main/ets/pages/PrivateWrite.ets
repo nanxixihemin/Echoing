@@ -5,6 +5,7 @@ import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import dataPreferences from '@ohos.data.preferences';
 import { AIResponseGenerator } from '../utils/AIResponseGenerator';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 interface LeafPosition {
   x: number;
@@ -213,213 +214,179 @@ struct PrivateWrite {
   }
 
   build() {
-    Stack() {
-      // 花园背景图片
-      Image($rawfile('garden_bg.jpg'))
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
+    Column() {
+      this.TopBar()
 
-      // 半透明遮罩
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(246,243,238,0.35)')
+      Scroll() {
+        Column({ space: 16 }) {
+          if (this.showAIResponse) {
+            this.AIResponseCard()
+          }
 
-      Column() {
-        // 顶部
-        this.TopBar()
+          Column({ space: 6 }) {
+            Text('写下此刻')
+              .fontSize(26)
+              .fontWeight(700)
+              .fontColor(EchoColors.TEXT_PRIMARY)
+            Text('这里的内容只属于你，不需要把话说得很完整')
+              .fontSize(13)
+              .fontColor(EchoColors.TEXT_SECONDARY)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
 
-        // AI回复
-        if (this.showAIResponse) {
-          this.AIResponseCard()
-        }
+          Column() {
+            TextArea({ placeholder: '今天有什么想说的吗？', text: this.inputContent })
+              .fontSize(15)
+              .fontColor(EchoColors.TEXT_PRIMARY)
+              .placeholderColor(EchoColors.TEXT_TERTIARY)
+              .backgroundColor(Color.Transparent)
+              .height(190)
+              .maxLength(500)
+              .onChange((value: string) => {
+                this.inputContent = value;
+              })
 
-        // 内容区
-        Scroll() {
-          Column({ space: 16 }) {
-            // 引导语
-            Column({ space: 6 }) {
-              Text('写下你的心事')
-                .fontSize(22)
-                .fontWeight(600)
-                .fontColor('#3D3832')
+            Text(`${this.inputContent.length}/500`)
+              .fontSize(11)
+              .fontColor(EchoColors.TEXT_TERTIARY)
+              .alignSelf(ItemAlign.End)
+              .margin({ right: 14, bottom: 10 })
+          }
+          .width('100%')
+          .backgroundColor(EchoColors.SURFACE)
+          .borderRadius(EchoRadius.LARGE)
+          .border({ width: 1, color: EchoColors.BORDER })
 
-              Text('这里只属于你，每一朵花都是你的故事')
-                .fontSize(13)
-                .fontColor('#B0AAA2')
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
-            .margin({ top: 12 })
-
-            // 输入区
-            Column() {
-              TextArea({ placeholder: '今天有什么想说的吗？', text: this.inputContent })
-                .fontSize(15)
-                .fontColor('#3D3832')
-                .placeholderColor('#C4BFBA')
-                .backgroundColor(Color.Transparent)
-                .height(180)
-                .maxLength(500)
-                .onChange((value: string) => {
-                  this.inputContent = value;
-                })
-
-              Text(`${this.inputContent.length}/500`)
-                .fontSize(11)
-                .fontColor('#C4BFBA')
-                .alignSelf(ItemAlign.End)
-                .margin({ right: 14, bottom: 10 })
-            }
-            .width('100%')
-            .backgroundColor('rgba(255,255,255,0.85)')
-            .backdropBlur(16)
-            .borderRadius(16)
-            .shadow({
-              radius: 12,
-              color: 'rgba(0,0,0,0.06)',
-              offsetY: 3
-            })
-
-            // 标签选择
-            Column({ space: 12 }) {
-              Row() {
-                Text('选择标签')
-                  .fontSize(13)
-                  .fontColor('#8A8480')
-
-                Text('（可选，最多3个）')
+          Column({ space: 12 }) {
+            Row() {
+              Column({ space: 2 }) {
+                Text('给这段心情加个标签')
+                  .fontSize(14)
+                  .fontWeight(600)
+                  .fontColor(EchoColors.TEXT_PRIMARY)
+                Text('可选，最多选择 3 个')
                   .fontSize(11)
-                  .fontColor('#C4BFBA')
+                  .fontColor(EchoColors.TEXT_TERTIARY)
+              }
+              .alignItems(HorizontalAlign.Start)
 
-                Blank()
+              Blank()
 
-                Text('+ 自定义')
-                  .fontSize(12)
-                  .fontColor('#C4A882')
+              Text(this.showAddTag ? '收起' : '自定义')
+                .fontSize(12)
+                .fontWeight(500)
+                .fontColor(EchoColors.PRIMARY_DARK)
+                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                .backgroundColor(EchoColors.PRIMARY_SOFT)
+                .borderRadius(EchoRadius.PILL)
+                .onClick(() => {
+                  this.showAddTag = !this.showAddTag;
+                })
+            }
+            .width('100%')
+
+            if (this.showAddTag) {
+              Row({ space: 10 }) {
+                TextInput({ placeholder: '输入标签名', text: this.newTagInput })
+                  .fontSize(14)
+                  .maxLength(6)
+                  .backgroundColor(EchoColors.PAGE)
+                  .fontColor(EchoColors.TEXT_PRIMARY)
+                  .placeholderColor(EchoColors.TEXT_TERTIARY)
+                  .border({ width: 1, color: EchoColors.BORDER })
+                  .borderRadius(EchoRadius.SMALL)
+                  .height(42)
+                  .layoutWeight(1)
+                  .onChange((value: string) => {
+                    this.newTagInput = value;
+                  })
+
+                Button('添加')
+                  .fontSize(13)
+                  .height(42)
+                  .backgroundColor(EchoColors.PRIMARY)
+                  .fontColor('#FFFFFF')
+                  .borderRadius(EchoRadius.SMALL)
                   .onClick(() => {
-                    this.showAddTag = !this.showAddTag;
+                    this.addCustomTag();
                   })
               }
               .width('100%')
+            }
 
-              if (this.showAddTag) {
-                Row({ space: 10 }) {
-                  TextInput({ placeholder: '标签名', text: this.newTagInput })
-                    .fontSize(14)
-                    .maxLength(6)
-                    .backgroundColor('#FFFFFF')
-                    .fontColor('#3D3832')
-                    .borderRadius(12)
-                    .height(40)
-                    .layoutWeight(1)
-                    .onChange((value: string) => {
-                      this.newTagInput = value;
-                    })
-
-                  Button('添加')
-                    .fontSize(13)
-                    .height(40)
-                    .backgroundColor('#C4A882')
-                    .fontColor('#FFFFFF')
-                    .borderRadius(12)
-                    .onClick(() => {
-                      this.addCustomTag();
-                    })
-                }
-                .width('100%')
-              }
-
-              Flex({ wrap: FlexWrap.Wrap }) {
-                ForEach(this.allTags, (tagName: string) => {
-                  Text(tagName)
-                    .fontSize(13)
-                    .fontColor(this.selectedTags.includes(tagName) ? '#FFFFFF' : this.getTagColor(tagName))
-                    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-                    .backgroundColor(this.selectedTags.includes(tagName)
-                      ? this.getTagColor(tagName)
-                      : this.getTagColor(tagName) + '18')
-                    .borderRadius(16)
-                    .margin({ right: 10, bottom: 10 })
-                    .onClick(() => {
-                      this.toggleTag(tagName);
-                    })
-                }, (tagName: string) => tagName)
-              }
-              .width('100%')
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(this.allTags, (tagName: string) => {
+                Text(tagName)
+                  .fontSize(13)
+                  .fontColor(this.selectedTags.includes(tagName) ? '#FFFFFF' : this.getTagColor(tagName))
+                  .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+                  .backgroundColor(this.selectedTags.includes(tagName)
+                    ? this.getTagColor(tagName)
+                    : this.getTagColor(tagName) + '18')
+                  .borderRadius(EchoRadius.PILL)
+                  .margin({ right: 8, bottom: 8 })
+                  .onClick(() => {
+                    this.toggleTag(tagName);
+                  })
+              }, (tagName: string) => tagName)
             }
             .width('100%')
-            .padding(16)
-            .backgroundColor('rgba(255,255,255,0.85)')
-            .backdropBlur(16)
-            .borderRadius(16)
-            .shadow({
-              radius: 12,
-              color: 'rgba(0,0,0,0.06)',
-              offsetY: 3
-            })
           }
           .width('100%')
-          .padding({ left: 24, right: 24, bottom: 120 })
-        }
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-      }
-      .width('100%')
-      .height('100%')
+          .padding(16)
+          .backgroundColor(EchoColors.SURFACE)
+          .borderRadius(EchoRadius.LARGE)
+          .border({ width: 1, color: EchoColors.BORDER })
 
-      // 提交按钮
-      Row() {
-        Text('种下这朵花')
-          .fontSize(16)
-          .fontWeight(500)
-          .fontColor('#FFFFFF')
-      }
-      .width('80%')
-      .height(50)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor(this.inputContent.trim().length > 0 ? '#C4A882' : '#D8D0C6')
-      .borderRadius(25)
-      .shadow({
-        radius: 16,
-        color: this.inputContent.trim().length > 0 ? 'rgba(196,168,130,0.3)' : 'transparent',
-        offsetY: 4
-      })
-      .position({ x: '10%', y: '88%' })
-      .onClick(() => {
-        if (this.inputContent.trim().length > 0 && !this.isSubmitting) {
-          this.submitLeaf();
+          Button(this.isSubmitting ? '正在保存…' : '保存这段心情')
+            .width('100%')
+            .height(52)
+            .fontSize(15)
+            .fontWeight(600)
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.inputContent.trim().length > 0 ? EchoColors.PRIMARY : EchoColors.TEXT_TERTIARY)
+            .borderRadius(EchoRadius.MEDIUM)
+            .enabled(this.inputContent.trim().length > 0 && !this.isSubmitting)
+            .onClick(() => {
+              if (this.inputContent.trim().length > 0 && !this.isSubmitting) {
+                this.submitLeaf();
+              }
+            })
         }
-      })
+        .width('100%')
+        .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 20, bottom: 36 })
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(EchoColors.PAGE)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
   TopBar() {
     Row() {
-      Column()
+      Text('‹')
+        .fontSize(28)
+        .fontWeight(600)
+        .fontColor(EchoColors.TEXT_PRIMARY)
         .width(40)
         .height(40)
-        .borderRadius(20)
-        .backgroundColor('rgba(255,255,255,0.7)')
-        .backdropBlur(12)
+        .textAlign(TextAlign.Center)
+        .backgroundColor(EchoColors.SURFACE)
+        .border({ width: 1, color: EchoColors.BORDER })
+        .borderRadius(EchoRadius.PILL)
         .onClick(() => { router.back(); })
-
-      Text('<')
-        .fontSize(18)
-        .fontColor('#5A5550')
-        .position({ x: 38, y: 58 })
 
       Blank()
 
-      Text('写下心事')
+      Text('私密树洞')
         .fontSize(17)
         .fontWeight(600)
-        .fontColor('#3D3832')
+        .fontColor(EchoColors.TEXT_PRIMARY)
 
       Blank()
 
@@ -428,38 +395,33 @@ struct PrivateWrite {
         .height(40)
     }
     .width('100%')
-    .padding({ left: 24, right: 24, top: 52, bottom: 8 })
+    .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 8 })
   }
 
   @Builder
   AIResponseCard() {
-    Column({ space: 10 }) {
-      Text('花园的回应')
-        .fontSize(13)
-        .fontWeight(500)
-        .fontColor('#C4A882')
+    Column({ space: 8 }) {
+      Row() {
+        Text('给你的回应')
+          .fontSize(13)
+          .fontWeight(600)
+          .fontColor(EchoColors.MINT_TEXT)
+        Blank()
+        Text('关闭')
+          .fontSize(11)
+          .fontColor(EchoColors.TEXT_TERTIARY)
+      }
+      .width('100%')
 
       Text(this.aiResponse)
         .fontSize(14)
-        .fontColor('#6B6560')
-        .lineHeight(24)
-
-      Text('点击关闭')
-        .fontSize(11)
-        .fontColor('#C4BFBA')
+        .fontColor(EchoColors.TEXT_SECONDARY)
+        .lineHeight(23)
     }
-    .width('88%')
-    .padding(18)
-    .margin({ top: 12 })
-    .backgroundColor('rgba(255,255,255,0.88)')
-    .backdropBlur(16)
-    .borderRadius(16)
-    .shadow({
-      radius: 12,
-      color: 'rgba(0,0,0,0.06)',
-      offsetY: 3
-    })
-    .alignSelf(ItemAlign.Center)
+    .width('100%')
+    .padding(16)
+    .backgroundColor(EchoColors.MINT_SOFT)
+    .borderRadius(EchoRadius.LARGE)
     .onClick(() => {
       this.showAIResponse = false;
     })

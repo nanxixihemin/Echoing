@@ -4,6 +4,7 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import dataPreferences from '@ohos.data.preferences';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 interface LeafPosition {
   x: number;
@@ -243,18 +244,6 @@ struct PrivateTree {
 
   build() {
     Stack() {
-      // 花园背景图片
-      Image($rawfile('garden_bg.jpg'))
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
-
-      // 半透明遮罩层，让内容可读
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(246,243,238,0.3)')
-
       Column() {
         this.TopBar()
         this.StatsBar()
@@ -263,18 +252,16 @@ struct PrivateTree {
           this.LoadingView()
         } else if (this.leaves.length === 0) {
           this.EmptyView()
+        } else if (this.viewMode === 'garden') {
+          this.GardenView()
         } else {
-          if (this.viewMode === 'garden') {
-            this.GardenView()
-          } else {
-            this.ListView()
-          }
+          this.ListView()
         }
       }
       .width('100%')
       .height('100%')
+      .backgroundColor(EchoColors.PAGE)
 
-      // 详情弹窗
       if (this.showDetail && this.selectedLeaf !== null) {
         if (this.showEditMode) {
           this.EditPanel()
@@ -291,101 +278,71 @@ struct PrivateTree {
   @Builder
   TopBar() {
     Row() {
-      Column()
+      Text('‹')
+        .fontSize(28)
+        .fontWeight(600)
+        .fontColor(EchoColors.TEXT_PRIMARY)
         .width(40)
         .height(40)
-        .borderRadius(20)
-        .backgroundColor('rgba(255,255,255,0.7)')
-        .backdropBlur(12)
+        .textAlign(TextAlign.Center)
+        .borderRadius(EchoRadius.PILL)
+        .backgroundColor(EchoColors.SURFACE)
+        .border({ width: 1, color: EchoColors.BORDER })
         .onClick(() => { router.back(); })
 
-      Text('<')
-        .fontSize(18)
-        .fontColor('#5A5550')
-        .position({ x: 14, y: 58 })
-
-      Blank()
-
       Column({ space: 2 }) {
-        Text('私密花园')
+        Text('我的心情记录')
           .fontSize(18)
           .fontWeight(600)
-          .fontColor('#3D3832')
-
-        Text('长按花朵珍藏')
+          .fontColor(EchoColors.TEXT_PRIMARY)
+        Text('长按一条记录可标记珍藏')
           .fontSize(10)
-          .fontColor('#8A8480')
+          .fontColor(EchoColors.TEXT_TERTIARY)
       }
-      .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-      .borderRadius(12)
-      .backgroundColor('rgba(255,255,255,0.5)')
-      .backdropBlur(8)
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
 
-      Blank()
-
-      // 切换视图
-      Column()
-        .width(40)
-        .height(40)
-        .borderRadius(20)
-        .backgroundColor('rgba(255,255,255,0.7)')
-        .backdropBlur(12)
+      Text(this.viewMode === 'garden' ? '列表' : '花园')
+        .fontSize(12)
+        .fontWeight(500)
+        .fontColor(EchoColors.PRIMARY_DARK)
+        .width(48)
+        .height(36)
+        .textAlign(TextAlign.Center)
+        .borderRadius(EchoRadius.PILL)
+        .backgroundColor(EchoColors.PRIMARY_SOFT)
         .onClick(() => {
           this.viewMode = this.viewMode === 'garden' ? 'list' : 'garden';
         })
-
-      Text(this.viewMode === 'garden' ? '=' : '#')
-        .fontSize(16)
-        .fontColor('#5A5550')
-        .position({ x: '87%', y: 58 })
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 52, bottom: 8 })
+    .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 10 })
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
   StatsBar() {
-    Row() {
-      // 今日
-      Row({ space: 6 }) {
-        Column()
-          .width(8)
-          .height(8)
-          .borderRadius(4)
-          .backgroundColor('#D4849A')
-
-        Text(`今日 ${this.todayCount}`)
-          .fontSize(12)
-          .fontColor('#6B6560')
-      }
-
-      // 全部
-      Row({ space: 6 }) {
-        Column()
-          .width(8)
-          .height(8)
-          .borderRadius(4)
-          .backgroundColor('#7BB88A')
-
-        Text(`共 ${this.leaves.length} 朵`)
-          .fontSize(12)
-          .fontColor('#6B6560')
-      }
-      .margin({ left: 20 })
-
-      Blank()
-
-      // 珍藏数
-      Text(`珍藏 ${this.leaves.filter((l: PrivateLeafData) => l.isImportant).length}`)
-        .fontSize(12)
-        .fontColor('#8A8480')
+    Row({ space: 8 }) {
+      this.StatItem(`今天 ${this.todayCount}`, EchoColors.PINK_SOFT, EchoColors.PINK_TEXT)
+      this.StatItem(`全部 ${this.leaves.length}`, EchoColors.MINT_SOFT, EchoColors.MINT_TEXT)
+      this.StatItem(`珍藏 ${this.leaves.filter((l: PrivateLeafData) => l.isImportant).length}`,
+        EchoColors.WARM_SOFT, EchoColors.WARM_TEXT)
     }
     .width('100%')
-    .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-    .backgroundColor('rgba(255,255,255,0.45)')
-    .backdropBlur(8)
-    .borderRadius(12)
-    .margin({ left: 12, right: 12 })
+    .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, bottom: 10 })
+  }
+
+  @Builder
+  StatItem(label: string, background: string, color: string) {
+    Text(label)
+      .layoutWeight(1)
+      .height(34)
+      .textAlign(TextAlign.Center)
+      .fontSize(12)
+      .fontWeight(500)
+      .fontColor(color)
+      .backgroundColor(background)
+      .borderRadius(EchoRadius.SMALL)
   }
 
   @Builder
@@ -394,11 +351,11 @@ struct PrivateTree {
       LoadingProgress()
         .width(40)
         .height(40)
-        .color('#C4B0A0')
+        .color(EchoColors.PRIMARY)
 
-      Text('花园正在苏醒...')
+      Text('正在整理你的记录…')
         .fontSize(14)
-        .fontColor('#B0AAA2')
+        .fontColor(EchoColors.TEXT_SECONDARY)
     }
     .width('100%')
     .layoutWeight(1)
@@ -407,37 +364,39 @@ struct PrivateTree {
 
   @Builder
   EmptyView() {
-    Column({ space: 16 }) {
-      Text('🪴')
-        .fontSize(72)
+    Column({ space: 12 }) {
+      Column()
+        .width(58)
+        .height(58)
+        .borderRadius(EchoRadius.LARGE)
+        .backgroundColor(EchoColors.MINT_SOFT)
 
-      Text('你的花园还空空的')
-        .fontSize(17)
-        .fontWeight(500)
-        .fontColor('#6B6560')
-        .margin({ top: 12 })
+      Text('这里还没有记录')
+        .fontSize(18)
+        .fontWeight(600)
+        .fontColor(EchoColors.TEXT_PRIMARY)
+        .margin({ top: 8 })
 
-      Text('写下第一个心事，种下一朵花')
+      Text('写下第一段心情，之后可以随时回来看看')
         .fontSize(13)
-        .fontColor('#A09A92')
+        .fontColor(EchoColors.TEXT_SECONDARY)
+        .textAlign(TextAlign.Center)
 
-      Row() {
-        Text('写下心事')
-          .fontSize(14)
-          .fontColor('#FFFFFF')
-      }
-      .height(44)
-      .padding({ left: 28, right: 28 })
-      .backgroundColor('#4CAF50')
-      .borderRadius(22)
-      .justifyContent(FlexAlign.Center)
-      .margin({ top: 16 })
-      .onClick(() => {
-        router.pushUrl({ url: 'pages/PrivateWrite' });
-      })
+      Button('写下此刻')
+        .height(44)
+        .padding({ left: 28, right: 28 })
+        .fontSize(14)
+        .fontColor('#FFFFFF')
+        .backgroundColor(EchoColors.PRIMARY)
+        .borderRadius(EchoRadius.PILL)
+        .margin({ top: 12 })
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/PrivateWrite' });
+        })
     }
     .width('100%')
     .layoutWeight(1)
+    .padding({ left: 36, right: 36 })
     .justifyContent(FlexAlign.Center)
   }
 
@@ -477,7 +436,6 @@ struct PrivateTree {
         .width(leaf.isImportant ? 24 : 18)
         .height(leaf.isImportant ? 24 : 18)
         .fill(this.getFlowerColors(leaf)[1])
-        .shadow({ radius: 6, color: 'rgba(0,0,0,0.08)', offsetY: 1 })
 
       if (leaf.isImportant) {
         Circle()
@@ -551,7 +509,7 @@ struct PrivateTree {
       Column({ space: 4 }) {
         Text(leaf.content)
           .fontSize(14)
-          .fontColor('#3D3832')
+          .fontColor(EchoColors.TEXT_PRIMARY)
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .lineHeight(20)
@@ -570,7 +528,7 @@ struct PrivateTree {
 
           Text(this.formatTime(leaf.timestamp))
             .fontSize(10)
-            .fontColor('#B0AAA2')
+            .fontColor(EchoColors.TEXT_TERTIARY)
         }
       }
       .layoutWeight(1)
@@ -587,14 +545,9 @@ struct PrivateTree {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor('rgba(255,255,255,0.85)')
-    .backdropBlur(12)
-    .borderRadius(16)
-    .shadow({
-      radius: 12,
-      color: 'rgba(0,0,0,0.06)',
-      offsetY: 3
-    })
+    .backgroundColor(EchoColors.SURFACE)
+    .border({ width: 1, color: EchoColors.BORDER })
+    .borderRadius(EchoRadius.MEDIUM)
     .onClick(() => {
       this.selectedLeaf = leaf;
       this.showDetail = true;
@@ -614,7 +567,7 @@ struct PrivateTree {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('rgba(0,0,0,0.3)')
+        .backgroundColor(EchoColors.SCRIM)
         .onClick(() => {
           this.showDetail = false;
           this.selectedLeaf = null;
@@ -663,7 +616,7 @@ struct PrivateTree {
 
               Text(this.formatFullDate(this.selectedLeaf.timestamp))
                 .fontSize(11)
-                .fontColor('#B0AAA2')
+                .fontColor(EchoColors.TEXT_TERTIARY)
             }
             .alignItems(HorizontalAlign.Start)
             .margin({ left: 10 })
@@ -685,7 +638,7 @@ struct PrivateTree {
           Scroll() {
             Text(this.selectedLeaf.content)
               .fontSize(15)
-              .fontColor('#3D3832')
+              .fontColor(EchoColors.TEXT_PRIMARY)
               .lineHeight(26)
               .width('100%')
           }
@@ -702,12 +655,12 @@ struct PrivateTree {
 
               Text(this.selectedLeaf.aiResponse)
                 .fontSize(13)
-                .fontColor('#6B6560')
+                .fontColor(EchoColors.TEXT_SECONDARY)
                 .lineHeight(22)
             }
             .width('100%')
             .padding(14)
-            .backgroundColor('#FAF6F0')
+            .backgroundColor(EchoColors.PRIMARY_SOFT)
             .borderRadius(12)
             .alignItems(HorizontalAlign.Start)
           }
@@ -718,7 +671,7 @@ struct PrivateTree {
               .layoutWeight(1)
               .height(42)
               .fontSize(13)
-              .backgroundColor(this.selectedLeaf.isImportant ? '#F0ECE6' : '#FAF0E0')
+              .backgroundColor(this.selectedLeaf.isImportant ? EchoColors.SURFACE_MUTED : '#FAF0E0')
               .fontColor(this.selectedLeaf.isImportant ? '#8A8480' : '#C4A060')
               .borderRadius(21)
               .onClick(() => {
@@ -734,7 +687,7 @@ struct PrivateTree {
               .height(42)
               .fontSize(13)
               .backgroundColor('#EDE8E0')
-              .fontColor('#6B6560')
+              .fontColor(EchoColors.TEXT_SECONDARY)
               .borderRadius(21)
               .onClick(() => {
                 if (this.selectedLeaf !== null) {
@@ -787,7 +740,7 @@ struct PrivateTree {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('rgba(0,0,0,0.3)')
+        .backgroundColor(EchoColors.SCRIM)
         .onClick(() => {
           this.showEditMode = false;
           this.showDetail = false;
@@ -797,12 +750,12 @@ struct PrivateTree {
         Text('编辑')
           .fontSize(16)
           .fontWeight(600)
-          .fontColor('#3D3832')
+          .fontColor(EchoColors.TEXT_PRIMARY)
           .alignSelf(ItemAlign.Start)
 
         TextArea({ text: this.editContent })
           .fontSize(14)
-          .fontColor('#3D3832')
+          .fontColor(EchoColors.TEXT_PRIMARY)
           .backgroundColor('#F6F3EE')
           .borderRadius(14)
           .height(100)
@@ -832,8 +785,8 @@ struct PrivateTree {
             .layoutWeight(1)
             .height(44)
             .fontSize(14)
-            .backgroundColor('#F0ECE6')
-            .fontColor('#6B6560')
+            .backgroundColor(EchoColors.SURFACE_MUTED)
+            .fontColor(EchoColors.TEXT_SECONDARY)
             .borderRadius(22)
             .onClick(() => {
               this.showEditMode = false;

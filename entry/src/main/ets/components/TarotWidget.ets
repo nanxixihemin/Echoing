@@ -2,6 +2,7 @@ import { ColorConstants } from '../utils/ColorConstants';
 import { ZzuNetwork } from '../utils/ZzuNetwork';
 import { AppConfig } from '../common/AppConfig';
 import http from '@ohos.net.http';
+import { AuthenticatedHttpClient } from '../service/AuthenticatedHttpClient';
 
 interface TarotCard {
   id: number;
@@ -231,31 +232,15 @@ export struct TarotWidget {
       max_tokens: 550
     };
 
-    const httpRequest = http.createHttp();
-    httpRequest.request(endpoint, {
+    AuthenticatedHttpClient.request(endpoint, {
       method: http.RequestMethod.POST,
-      header: { 'Content-Type': 'application/json' },
       extraData: JSON.stringify(reqBody),
       connectTimeout: 15000,
       readTimeout: 60000
-    }, (err, data) => {
-      httpRequest.destroy();
+    }).then((data: http.HttpResponse) => {
       this.isAILoading = false;
-      if (err || data.responseCode !== 200) {
-        let message: string = 'AI 服务请求失败';
-        if (data && data.result) {
-          try {
-            const errorObj = JSON.parse(data.result as string) as Record<string, Object>;
-            if (errorObj['message']) {
-              message = errorObj['message'] as string;
-            } else if (errorObj['error']) {
-              message = errorObj['error'] as string;
-            }
-          } catch (e) {
-            message = data.result as string;
-          }
-        }
-        this.aiInterpretation = `AI 解读请求失败（${data.responseCode}）：${message}`;
+      if (data.responseCode !== 200) {
+        this.aiInterpretation = `AI 解读请求失败（${data.responseCode}），请稍后重试。`;
         return;
       }
       try {
@@ -273,6 +258,9 @@ export struct TarotWidget {
       } catch (e) {
         this.aiInterpretation = "塔罗波长失准，解读解析失败。";
       }
+    }).catch(() => {
+      this.isAILoading = false;
+      this.aiInterpretation = 'AI 解读请求失败，请检查登录状态和网络连接。';
     });
   }
 

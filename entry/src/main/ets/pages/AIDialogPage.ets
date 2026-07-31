@@ -4,6 +4,8 @@ import promptAction from '@ohos.promptAction';
 import { ChatHistoryManager, ChatSession, ChatMsg } from '../service/ChatHistoryManager';
 import common from '@ohos.app.ability.common';
 import { AppConfig } from '../common/AppConfig';
+import { AuthenticatedHttpClient } from '../service/AuthenticatedHttpClient';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 interface RouterParams {
   interpretation?: string;
@@ -21,10 +23,6 @@ interface SiliconFlowReqBody {
   messages: SiliconFlowMessage[];
   temperature: number;
   max_tokens: number;
-  userId?: string;
-  accountKey?: string;
-  nickname?: string;
-  bio?: string;
 }
 interface SiliconFlowChoiceMessage {
   content: string;
@@ -42,12 +40,6 @@ interface ChatMessage {
   content: string;
 }
 
-// ====== 全局色彩常量 ======
-const BG_PAGE = '#FFFDF9';
-const ACCENT = '#F18F01';
-const TEXT_MAIN = '#5A3A00';
-const TEXT_SUB = '#8D6B32';
-
 @Entry
 @Component
 struct AIDialogPage {
@@ -56,9 +48,6 @@ struct AIDialogPage {
   @State isLoading: boolean = false;
   @State titleScale: number = 1;
   @State dotCount: number = 0;
-  @StorageProp('currentAccountKey') currentAccountKey: string = '';
-  @StorageProp('userNickname') userNickname: string = '';
-  @StorageProp('userBio') userBio: string = '';
   private nextId: number = 1;
   private dotTimer: number = -1;
   private systemPrompt: string = '';
@@ -204,41 +193,44 @@ struct AIDialogPage {
 
   build() {
     Column() {
-      // ========== 顶部导航栏 ==========
       Row() {
-        // 返回按钮 或 返回箭头
-        Text("←")
-          .fontSize(22)
-          .fontColor(TEXT_MAIN)
-          .fontWeight(FontWeight.Bold)
-          .width(36)
-          .height(36)
+        Text('‹')
+          .fontSize(28)
+          .fontWeight(600)
+          .fontColor(EchoColors.TEXT_PRIMARY)
+          .width(40)
+          .height(40)
           .textAlign(TextAlign.Center)
-          .backgroundColor('#FFF2CC')
-          .border({ width: 1.5, color: ACCENT, radius: 18 })
+          .backgroundColor(EchoColors.SURFACE)
+          .border({ width: 1, color: EchoColors.BORDER })
+          .borderRadius(EchoRadius.PILL)
           .onClick(() => {
             router.back();
           })
 
-        Blank()
+        Column({ space: 2 }) {
+          Text('对话陪伴')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(EchoColors.TEXT_PRIMARY)
+          Text(this.sessionTheme)
+            .fontSize(10)
+            .fontColor(EchoColors.TEXT_TERTIARY)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center)
 
-        // 标题文字
-        Text("嵩月塔罗")
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(TEXT_MAIN)
-          .letterSpacing(2)
-
-        Blank()
-
-        // 右上角回顾按钮 跳转到历史页
-        Text("回顾")
+        Text('历史')
           .fontSize(12)
-          .fontColor(TEXT_MAIN)
-          .fontWeight(FontWeight.Bold)
-          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-          .backgroundColor('#E8DAEF')
-          .border({ width: 1.5, color: ACCENT, radius: 12 })
+          .fontColor(EchoColors.PRIMARY_DARK)
+          .fontWeight(FontWeight.Medium)
+          .width(48)
+          .height(36)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(EchoColors.PRIMARY_SOFT)
+          .borderRadius(EchoRadius.PILL)
           .onClick(() => {
             this.saveCurrentSession();
             router.pushUrl({
@@ -247,21 +239,36 @@ struct AIDialogPage {
           })
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 52, bottom: 8 })
+      .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 10 })
       .alignItems(VerticalAlign.Center)
 
-      // ========== 消息列表 ==========
       List({ space: 12 }) {
+        if (this.messages.length === 0 && !this.isLoading) {
+          ListItem() {
+            Column({ space: 8 }) {
+              Text('从你此刻最在意的事情开始')
+                .fontSize(17)
+                .fontWeight(600)
+                .fontColor(EchoColors.TEXT_PRIMARY)
+              Text('不需要组织好语言，想到什么就说什么')
+                .fontSize(13)
+                .fontColor(EchoColors.TEXT_SECONDARY)
+            }
+            .width('100%')
+            .padding({ top: 60, bottom: 30 })
+          }
+        }
+
         ForEach(
           this.messages,
           (item: ChatMessage) => {
             ListItem() {
               Column() {
                 if (item.role === 'assistant') {
-                  Text("嵩月塔罗占卜师")
+                  Text('Echoing')
                     .fontSize(11)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor(TEXT_SUB)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(EchoColors.TEXT_SECONDARY)
                     .margin({ bottom: 4 })
                     .alignSelf(ItemAlign.Start)
                 }
@@ -273,17 +280,14 @@ struct AIDialogPage {
 
                   Text(item.content)
                     .fontSize(14)
-                    .fontColor(TEXT_MAIN)
-                    .lineHeight(21)
+                    .fontColor(item.role === 'user' ? '#FFFFFF' : EchoColors.TEXT_PRIMARY)
+                    .lineHeight(22)
                     .wordBreak(WordBreak.BREAK_ALL)
-                    .constraintSize({ maxWidth: '78%' })
-                    .backgroundColor(item.role === 'user' ? '#FFD8D8' : '#E2F0CB')
-                    .border({
-                      width: 1.5,
-                      color: item.role === 'user' ? ACCENT : '#A8D5A2',
-                      radius: 14
-                    })
-                    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+                    .constraintSize({ maxWidth: '82%' })
+                    .backgroundColor(item.role === 'user' ? EchoColors.PRIMARY : EchoColors.SURFACE)
+                    .border(item.role === 'assistant' ? { width: 1, color: EchoColors.BORDER } : { width: 0 })
+                    .borderRadius(EchoRadius.MEDIUM)
+                    .padding({ left: 14, right: 14, top: 11, bottom: 11 })
 
                   if (item.role === 'assistant') {
                     Blank()
@@ -301,20 +305,20 @@ struct AIDialogPage {
         if (this.isLoading) {
           ListItem() {
             Column() {
-              Text("嵩月塔罗占卜师 正在感应中")
+              Text('正在整理回应')
                 .fontSize(11)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(TEXT_SUB)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(EchoColors.TEXT_SECONDARY)
                 .margin({ bottom: 4 })
                 .alignSelf(ItemAlign.Start)
 
               Text(this.getLoadingDots())
                 .fontSize(18)
-                .fontColor('#A8D5A2')
+                .fontColor(EchoColors.MINT_TEXT)
                 .fontWeight(FontWeight.Bold)
-                .backgroundColor('#E2F0CB')
-                .border({ width: 1.5, color: '#A8D5A2', radius: 14 })
-                .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                .backgroundColor(EchoColors.MINT_SOFT)
+                .borderRadius(EchoRadius.MEDIUM)
+                .padding({ left: 14, right: 14, top: 8, bottom: 8 })
                 .alignSelf(ItemAlign.Start)
             }
             .width('100%')
@@ -323,46 +327,47 @@ struct AIDialogPage {
       }
       .layoutWeight(1)
       .width('100%')
-      .padding({ left: 16, right: 16 })
+      .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE })
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
 
-      // ========== 底部输入区 ==========
       Row({ space: 8 }) {
         TextInput({
-          placeholder: "继续提问…",
+          placeholder: '继续说说…',
           text: this.userInput
         })
           .onChange((value: string) => {
             this.userInput = value;
           })
           .layoutWeight(1)
-          .height(42)
-          .backgroundColor('#FFF2CC')
-          .fontColor(TEXT_MAIN)
-          .placeholderColor(TEXT_SUB)
-          .border({ width: 1.5, color: ACCENT, radius: 21 })
+          .height(46)
+          .backgroundColor(EchoColors.SURFACE)
+          .fontColor(EchoColors.TEXT_PRIMARY)
+          .placeholderColor(EchoColors.TEXT_TERTIARY)
+          .border({ width: 1, color: EchoColors.BORDER })
+          .borderRadius(EchoRadius.PILL)
           .padding({ left: 14, right: 14 })
 
-        Button("发送")
-          .width(56)
-          .height(42)
+        Button('发送')
+          .width(64)
+          .height(46)
           .fontSize(14)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.userInput.trim().length > 0 ? TEXT_MAIN : TEXT_SUB)
-          .backgroundColor(this.userInput.trim().length > 0 ? '#FFAFCC' : '#EDE4D6')
-          .border({ width: 1.5, color: ACCENT, radius: 21 })
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#FFFFFF')
+          .backgroundColor(this.userInput.trim().length > 0 ? EchoColors.PRIMARY : EchoColors.TEXT_TERTIARY)
+          .borderRadius(EchoRadius.PILL)
+          .enabled(this.userInput.trim().length > 0 && !this.isLoading)
           .onClick(() => {
             this.sendMessage();
           })
       }
       .width('100%')
-      .padding({ left: 14, right: 14, top: 8, bottom: 28 })
-      .backgroundColor(BG_PAGE)
+      .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 8, bottom: 22 })
+      .backgroundColor(EchoColors.PAGE)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(BG_PAGE)
+    .backgroundColor(EchoColors.PAGE)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -414,39 +419,27 @@ struct AIDialogPage {
       model: AppConfig.AI_MODEL,
       messages: apiMessages,
       temperature: 0.7,
-      max_tokens: 600,
-      userId: this.currentAccountKey,
-      accountKey: this.currentAccountKey,
-      nickname: this.userNickname,
-      bio: this.userBio
+      max_tokens: 600
     };
 
     const endpoint = AppConfig.AI_CHAT_COMPLETIONS_PROXY_URL;
 
-    const httpRequest = http.createHttp();
-    httpRequest.request(
-      endpoint,
-      {
-        method: http.RequestMethod.POST,
-        header: {
-          'Content-Type': 'application/json'
-        },
-        extraData: JSON.stringify(reqBody),
-        connectTimeout: 15000,
-        readTimeout: 30000
-      },
-      (err, data) => {
-        httpRequest.destroy();
+    AuthenticatedHttpClient.request(endpoint, {
+      method: http.RequestMethod.POST,
+      extraData: JSON.stringify(reqBody),
+      connectTimeout: 15000,
+      readTimeout: 30000
+    }).then((data: http.HttpResponse) => {
         this.isLoading = false;
         if (this.dotTimer !== -1) {
           clearInterval(this.dotTimer);
           this.dotTimer = -1;
         }
 
-        if (err || data.responseCode !== 200) {
+        if (data.responseCode !== 200) {
           let errMsg = '网络请求失败，请重试。';
-          if (data?.responseCode === 401) errMsg = 'API 密钥无效，请检查。';
-          if (data?.responseCode === 403) errMsg = '该接口暂无访问权限。';
+          if (data.responseCode === 403) errMsg = '该接口暂无访问权限。';
+          if (data.responseCode === 429) errMsg = '请求过于频繁，请稍后再试。';
           this.messages.push({
             id: this.nextId++,
             role: 'assistant',
@@ -495,7 +488,17 @@ struct AIDialogPage {
             content: '数据解析失败，请重试。'
           });
         }
+    }).catch(() => {
+      this.isLoading = false;
+      if (this.dotTimer !== -1) {
+        clearInterval(this.dotTimer);
+        this.dotTimer = -1;
       }
-    );
+      this.messages.push({
+        id: this.nextId++,
+        role: 'assistant',
+        content: '网络请求失败，请重试。'
+      });
+    });
   }
 }

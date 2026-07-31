@@ -1,4 +1,4 @@
-import { ColorConstants } from '../utils/ColorConstants';
+import { EchoColors, EchoRadius } from '../utils/EchoTheme';
 
 @Component
 export struct IntrospectionWidget {
@@ -11,146 +11,148 @@ export struct IntrospectionWidget {
   @State inputHint: string = '';
 
   private questions: string[] = [
-    '沉下心来，剥开繁杂。此刻，究竟是什么在牵扯你的思绪？',
-    '抛开外界甚至他人的眼光，这件事对你个人而言，真正的意义是什么？',
-    '如果你什么都不做任由其发展，最坏的结果是什么？它真的有那么可怕、不可承受吗？',
-    '不谈宏大的计划。如果只要打破当下的僵局，今天你能走出的【最小第一步】是什么？'
+    '此刻，是什么一直牵动着你的思绪？',
+    '如果暂时放下别人的眼光，这件事对你真正意味着什么？',
+    '如果什么都不做，最担心的结果是什么？它真的无法承受吗？',
+    '不需要完整计划，今天能走出的最小一步是什么？'
   ];
-
-  aboutToAppear(): void {
-    console.info('[Echoing] IntrospectionWidget aboutToAppear called');
-  }
 
   nextStep() {
     const answer = this.currentInput.trim();
-    console.info(`[Echoing] Introspection nextStep tapped, step=${this.currentStep}, answerLength=${answer.length}`);
     if (answer === '') {
-      this.inputHint = '先写下一点此刻浮现的答案，再继续。';
+      this.inputHint = '先写下一点此刻浮现的答案。';
       return;
     }
-    this.answers[this.currentStep] = this.currentInput;
+    this.answers[this.currentStep] = answer;
     this.currentInput = '';
     this.inputHint = '';
-    
+
     if (this.currentStep < this.questions.length - 1) {
-      animateTo({ duration: 400, curve: Curve.EaseOut }, (): void => {
+      animateTo({ duration: 300, curve: Curve.EaseOut }, (): void => {
         this.currentStep++;
       });
     } else {
-      // 结束，将最小第一步化作待办
-      this.onResult(this.answers[3]); 
+      this.onResult(this.answers[3]);
     }
   }
 
   build() {
     Stack() {
-      // 沉浸背景
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(ColorConstants.BACKGROUND_DARK)
-        .opacity(0.98)
-        .onClick((): void => { this.onClose(); })
+        .backgroundColor(EchoColors.PAGE)
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
-      Column() {
-        // 头部
-        Text('问 鼎 初 心')
-          .fontSize(24)
-          .fontColor(ColorConstants.TEXT_PRIMARY)
-          .fontWeight(FontWeight.Bold)
-          .letterSpacing(6)
-          .margin({ top: 60, bottom: 40 })
+      Column({ space: 20 }) {
+        Column({ space: 6 }) {
+          Text('向内看一会儿')
+            .fontSize(24)
+            .fontColor(EchoColors.TEXT_PRIMARY)
+            .fontWeight(FontWeight.Bold)
+          Text(`第 ${this.currentStep + 1} 步，共 ${this.questions.length} 步`)
+            .fontSize(13)
+            .fontColor(EchoColors.TEXT_SECONDARY)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
 
-        // 问答流 (对话轴)
-        List({ space: 24 }) {
-           ForEach(this.questions.slice(0, this.currentStep + 1), (q: string, idx: number) => {
-              ListItem() {
-                 Column() {
-                     // 系统提问
-                     Text(`Q${idx + 1}: ` + q)
-                        .fontSize(14)
-                        .lineHeight(20)
-                        .fontColor(ColorConstants.TEXT_SECONDARY)
-                        .margin({ bottom: 12 })
-                        .transition({ type: TransitionType.Insert, opacity: 1, translate: { y: 20 } })
+        Row({ space: 6 }) {
+          ForEach(this.questions, (_question: string, index: number) => {
+            Row()
+              .height(4)
+              .layoutWeight(1)
+              .backgroundColor(index <= this.currentStep ? EchoColors.PRIMARY : EchoColors.BORDER)
+              .borderRadius(2)
+          }, (_question: string, index: number) => index.toString())
+        }
+        .width('100%')
 
-                     // 用户回答
-                     if (idx < this.currentStep) {
-                        Text(this.answers[idx])
-                          .fontSize(15)
-                          .lineHeight(22)
-                          .fontColor(ColorConstants.MINT_CYAN)
-                          .padding(16)
-                          .backgroundColor(ColorConstants.SURFACE_GLASS)
-                          .borderRadius(16)
-                          .margin({ bottom: 8 })
-                          .transition({ type: TransitionType.Insert, opacity: 1 })
-                     }
-                 }
-                 .alignItems(HorizontalAlign.Start)
-                 .width('100%')
-                 .padding({ left: 24, right: 24 })
+        List({ space: 12 }) {
+          ForEach(this.questions.slice(0, this.currentStep + 1), (question: string, index: number) => {
+            ListItem() {
+              Column({ space: 10 }) {
+                Text(question)
+                  .fontSize(15)
+                  .lineHeight(23)
+                  .fontColor(EchoColors.TEXT_PRIMARY)
+
+                if (index < this.currentStep) {
+                  Text(this.answers[index])
+                    .fontSize(14)
+                    .lineHeight(21)
+                    .fontColor(EchoColors.TEXT_SECONDARY)
+                    .padding(14)
+                    .width('100%')
+                    .backgroundColor(EchoColors.SURFACE)
+                    .borderRadius(EchoRadius.MEDIUM)
+                    .border({ width: 1, color: EchoColors.BORDER })
+                }
               }
-           })
+              .alignItems(HorizontalAlign.Start)
+              .width('100%')
+            }
+          }, (_question: string, index: number) => index.toString())
         }
         .width('100%')
         .layoutWeight(1)
+        .scrollBar(BarState.Off)
 
-        // 底部输入交互区
-        if (this.currentStep < this.questions.length) {
-            Column() {
-              TextArea({ placeholder: '在此写下浮现的答案...', text: this.currentInput })
-                 .height(100)
-                 .backgroundColor(ColorConstants.SURFACE_CARD)
-                 .fontColor(ColorConstants.TEXT_PRIMARY)
-                 .placeholderColor(ColorConstants.TEXT_SECONDARY)
-                 .borderRadius(16)
-                 .padding(16)
-                 .onChange((v: string): void => {
-                   this.currentInput = v;
-                   if (v.trim().length > 0) {
-                     this.inputHint = '';
-                   }
-                 })
-                 .margin({ bottom: 20 })
-              
-              Button(this.currentStep === this.questions.length - 1 ? '点燃：转化行动微光' : '深呼吸，继续向内探索')
-                 .width('100%')
-                 .height(48)
-                 .backgroundColor(this.currentStep === this.questions.length - 1 ? ColorConstants.MINT_CYAN : ColorConstants.TEXT_PRIMARY)
-                 .fontColor(ColorConstants.BACKGROUND_DARK)
-                 .fontWeight(FontWeight.Bold)
-                 .borderRadius(24)
-                 .onClick((): void => { this.nextStep(); })
-
-              if (this.inputHint.length > 0) {
-                Text(this.inputHint)
-                  .fontSize(12)
-                  .fontColor(ColorConstants.MINT_CYAN)
-                  .margin({ top: 12 })
-                  .width('100%')
+        Column({ space: 12 }) {
+          TextArea({ placeholder: '写下此刻浮现的答案', text: this.currentInput })
+            .height(110)
+            .backgroundColor(EchoColors.SURFACE)
+            .fontColor(EchoColors.TEXT_PRIMARY)
+            .placeholderColor(EchoColors.TEXT_TERTIARY)
+            .borderRadius(EchoRadius.MEDIUM)
+            .border({ width: 1, color: EchoColors.BORDER })
+            .padding(16)
+            .onChange((value: string): void => {
+              this.currentInput = value;
+              if (value.trim().length > 0) {
+                this.inputHint = '';
               }
-            }
+            })
+
+          if (this.inputHint.length > 0) {
+            Text(this.inputHint)
+              .fontSize(12)
+              .fontColor(EchoColors.PRIMARY)
+              .width('100%')
+          }
+
+          Button(this.currentStep === this.questions.length - 1 ? '记下这一步' : '继续')
             .width('100%')
-            .padding({ left: 24, right: 24, bottom: 40 })
+            .height(48)
+            .backgroundColor(EchoColors.PRIMARY)
+            .fontColor(Color.White)
+            .fontWeight(FontWeight.Bold)
+            .borderRadius(EchoRadius.PILL)
+            .onClick((): void => {
+              this.nextStep();
+            })
         }
+        .width('100%')
       }
       .width('100%')
       .height('100%')
+      .padding({ top: 92, left: 24, right: 24, bottom: 28 })
 
-      // 沉浸式返回按键
-      Row() {
-        Row() {
-          Text('‹').fontSize(18).fontColor(ColorConstants.TEXT_PRIMARY).margin({ right: 4 })
-          Text('返回').fontSize(14).fontColor(ColorConstants.TEXT_PRIMARY)
-        }
-        .padding({ left: 12, right: 16, top: 6, bottom: 6 })
-        .backgroundColor(ColorConstants.SURFACE_CARD)
-        .borderRadius(16)
-        .border({ width: 1, color: ColorConstants.BORDER_COLOR })
-        .onClick((): void => { this.onClose(); })
+      Row({ space: 5 }) {
+        Text('‹')
+          .fontSize(18)
+          .fontColor(EchoColors.TEXT_PRIMARY)
+        Text('返回')
+          .fontSize(14)
+          .fontColor(EchoColors.TEXT_PRIMARY)
       }
+      .padding({ left: 12, right: 16, top: 7, bottom: 7 })
+      .backgroundColor(EchoColors.SURFACE)
+      .borderRadius(EchoRadius.PILL)
+      .border({ width: 1, color: EchoColors.BORDER })
+      .onClick((): void => {
+        this.onClose();
+      })
       .position({ x: 16, y: 36 })
       .zIndex(99)
     }

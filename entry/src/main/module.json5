@@ -21,6 +21,16 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "metadata": [
+      {
+        "name": "app_id",
+        "value": "6917603377153205445"
+      },
+      {
+        "name": "client_id",
+        "value": "6917603377153205445"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
@@ -31,12 +41,6 @@
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
-        "metadata": [
-          {
-            "name": "client_id",
-            "value": "6917603377153205445"
-          }
-        ],
         "skills": [
           {
             "entities": [

@@ -6,12 +6,7 @@ import fileUri from '@ohos.file.fileuri';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { systemShare } from '@kit.ShareKit';
 import { ChatHistoryManager, ChatSession } from '../service/ChatHistoryManager';
-
-// ====== 色彩常量 ======
-const BG_PAGE = '#FFFDF9';
-const ACCENT = '#F18F01';
-const TEXT_MAIN = '#5A3A00';
-const TEXT_SUB = '#8D6B32';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 interface HistoryRouterParams {
   refreshKey?: string;
@@ -22,7 +17,6 @@ interface HistoryRouterParams {
 struct ChatHistoryPage {
   @State sessions: ChatSession[] = [];
   @State isLoading: boolean = true;
-  @State titleScale: number = 1;
   @State exportMsg: string = '';
   // 多选模式
   @State isSelectMode: boolean = false;
@@ -30,9 +24,6 @@ struct ChatHistoryPage {
 
   aboutToAppear() {
     this.loadSessions();
-    setInterval(() => {
-      this.titleScale = this.titleScale === 1 ? 1.04 : 1;
-    }, 1800);
   }
 
   private async loadSessions(): Promise<void> {
@@ -137,13 +128,17 @@ struct ChatHistoryPage {
 
   build() {
     Column() {
-      // ========== 顶部栏 ==========
       Row() {
-        Text(this.isSelectMode ? "取消" : "返回")
-          .fontSize(14)
-          .fontColor(ACCENT)
-          .fontWeight(FontWeight.Bold)
-          .padding({ left: 4, right: 12, top: 6, bottom: 6 })
+        Text(this.isSelectMode ? '取消' : '‹')
+          .fontSize(this.isSelectMode ? 13 : 28)
+          .fontColor(this.isSelectMode ? EchoColors.PRIMARY_DARK : EchoColors.TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium)
+          .width(48)
+          .height(40)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(EchoColors.SURFACE)
+          .border({ width: 1, color: EchoColors.BORDER })
+          .borderRadius(EchoRadius.PILL)
           .onClick(() => {
             if (this.isSelectMode) {
               this.isSelectMode = false;
@@ -153,50 +148,37 @@ struct ChatHistoryPage {
             }
           })
 
-        Blank()
+        Text(this.isSelectMode ? `已选 ${this.selectedIds.length} 条` : '对话历史')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EchoColors.TEXT_PRIMARY)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
 
         if (!this.isSelectMode) {
-          Row({ space: 2 }) {
-            Text("回").fontSize(20).fontWeight(FontWeight.Bolder).fontColor('#FFB3C6')
-              .fontStyle(FontStyle.Italic).offset({ y: 1 })
-              .textShadow({ radius: 0, color: '#2B2D42', offsetX: 1, offsetY: 1 })
-            Text("顾").fontSize(19).fontWeight(FontWeight.Bolder).fontColor('#FFC8DD')
-              .fontStyle(FontStyle.Italic).offset({ y: -1 })
-              .textShadow({ radius: 0, color: '#2B2D42', offsetX: 1, offsetY: 1 })
-            Text("之").fontSize(20).fontWeight(FontWeight.Bolder).fontColor('#FFAFCC')
-              .fontStyle(FontStyle.Italic).offset({ y: 2 })
-              .textShadow({ radius: 0, color: '#2B2D42', offsetX: 1, offsetY: 1 })
-            Text("书").fontSize(19).fontWeight(FontWeight.Bolder).fontColor('#E2B4E5')
-              .fontStyle(FontStyle.Italic).offset({ y: -1 })
-              .textShadow({ radius: 0, color: '#2B2D42', offsetX: 1, offsetY: 1 })
-          }
-          .scale({ x: this.titleScale, y: this.titleScale })
-          .animation({ duration: 1800, curve: Curve.Smooth })
-        } else {
-          Text(`已选${this.selectedIds.length} 条`)
-            .fontSize(16)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(TEXT_MAIN)
-        }
-
-        Blank()
-
-        if (!this.isSelectMode) {
-          Text("管理")
+          Text('管理')
             .fontSize(13)
-            .fontColor(ACCENT)
-            .fontWeight(FontWeight.Bold)
-            .padding({ left: 8, right: 4, top: 6, bottom: 6 })
+            .fontColor(EchoColors.PRIMARY_DARK)
+            .fontWeight(FontWeight.Medium)
+            .width(48)
+            .height(36)
+            .textAlign(TextAlign.Center)
+            .backgroundColor(EchoColors.PRIMARY_SOFT)
+            .borderRadius(EchoRadius.PILL)
             .onClick(() => {
               this.isSelectMode = true;
               this.selectedIds = [];
             })
         } else {
-          Text(this.selectedIds.length === this.sessions.length ? "取消全选" : "全选")
-            .fontSize(13)
-            .fontColor(ACCENT)
-            .fontWeight(FontWeight.Bold)
-            .padding({ left: 8, right: 4, top: 6, bottom: 6 })
+          Text(this.selectedIds.length === this.sessions.length ? '取消全选' : '全选')
+            .fontSize(12)
+            .fontColor(EchoColors.PRIMARY_DARK)
+            .fontWeight(FontWeight.Medium)
+            .width(56)
+            .height(36)
+            .textAlign(TextAlign.Center)
+            .backgroundColor(EchoColors.PRIMARY_SOFT)
+            .borderRadius(EchoRadius.PILL)
             .onClick(() => {
               if (this.selectedIds.length === this.sessions.length) {
                 this.selectedIds = [];
@@ -207,7 +189,7 @@ struct ChatHistoryPage {
         }
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 52, bottom: 8 })
+      .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 12 })
       .alignItems(VerticalAlign.Center)
 
       // 提示条
@@ -224,15 +206,15 @@ struct ChatHistoryPage {
       // ========== 列表区 ==========
       if (this.isLoading) {
         Column() {
-          Text("加载中…").fontSize(14).fontColor(TEXT_SUB).margin({ top: 80 })
+          Text("加载中…").fontSize(14).fontColor(EchoColors.TEXT_SECONDARY).margin({ top: 80 })
         }
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Start)
       } else if (this.sessions.length === 0) {
         Column() {
-          Text("暂无占卜记录").fontSize(16).fontColor(TEXT_SUB).margin({ top: 80 })
-          Text("去抽一张牌吧～").fontSize(13).fontColor('#C4A76D').margin({ top: 8 })
+          Text("还没有对话记录").fontSize(16).fontColor(EchoColors.TEXT_SECONDARY).margin({ top: 80 })
+          Text("开始一次对话后，会在这里继续回顾").fontSize(13).fontColor('#C4A76D').margin({ top: 8 })
         }
         .width('100%')
         .layoutWeight(1)
@@ -248,7 +230,7 @@ struct ChatHistoryPage {
                   if (this.isSelectMode) {
                     Text(this.isSelected(item.id) ? "✓" : "○")
                       .fontSize(22)
-                      .fontColor(this.isSelected(item.id) ? ACCENT : '#C4A76D')
+                      .fontColor(this.isSelected(item.id) ? EchoColors.PRIMARY : '#C4A76D')
                       .margin({ right: 10 })
                       .onClick(() => {
                         this.toggleSelect(item.id);
@@ -259,7 +241,7 @@ struct ChatHistoryPage {
                     Text(item.summary || '未命名会话')
                       .fontSize(15)
                       .fontWeight(FontWeight.Bold)
-                      .fontColor(TEXT_MAIN)
+                      .fontColor(EchoColors.TEXT_PRIMARY)
                       .maxLines(2)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .lineHeight(20)
@@ -271,15 +253,18 @@ struct ChatHistoryPage {
 
                       Text(`${item.messages.length}条消息`)
                         .fontSize(11)
-                        .fontColor(TEXT_SUB)
+                        .fontColor(EchoColors.TEXT_SECONDARY)
                     }
                   }
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
                 }
                 .width('100%')
-                .backgroundColor(this.isSelectMode && this.isSelected(item.id) ? '#FFE8B0' : '#FFF2CC')
-                .border({ width: 1.5, color: this.isSelectMode && this.isSelected(item.id) ? ACCENT : '#E8D5A0', radius: 14 })
+                .backgroundColor(this.isSelectMode && this.isSelected(item.id)
+                  ? EchoColors.PRIMARY_SOFT : EchoColors.SURFACE)
+                .border({ width: 1, color: this.isSelectMode && this.isSelected(item.id)
+                  ? EchoColors.PRIMARY : EchoColors.BORDER })
+                .borderRadius(EchoRadius.MEDIUM)
                 .padding({ left: 16, right: 16, top: 14, bottom: 14 })
                 .onClick(() => {
                   if (this.isSelectMode) {
@@ -317,7 +302,7 @@ struct ChatHistoryPage {
             .borderRadius(21)
             .backgroundColor('#E2F0CB')
             .border({ width: 1.2, color: '#7B8794' })
-            .fontColor(TEXT_MAIN)
+            .fontColor(EchoColors.TEXT_PRIMARY)
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
             .onClick(() => {
@@ -329,9 +314,9 @@ struct ChatHistoryPage {
             .layoutWeight(1)
             .height(42)
             .borderRadius(21)
-            .backgroundColor('#FFF2CC')
+            .backgroundColor(EchoColors.SURFACE)
             .border({ width: 1.2, color: '#7B8794' })
-            .fontColor(TEXT_MAIN)
+            .fontColor(EchoColors.TEXT_PRIMARY)
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
             .onClick(() => {
@@ -340,12 +325,12 @@ struct ChatHistoryPage {
         }
         .width('100%')
         .padding({ left: 20, right: 20, top: 10, bottom: 30 })
-        .backgroundColor(BG_PAGE)
+        .backgroundColor(EchoColors.PAGE)
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(BG_PAGE)
+    .backgroundColor(EchoColors.PAGE)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 

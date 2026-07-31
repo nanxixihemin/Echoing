@@ -9,7 +9,8 @@ const STORE_CONFIG: relationalStore.StoreConfig = {
   securityLevel: relationalStore.SecurityLevel.S1
 };
 const ACCOUNT_PREF_NAME: string = 'echoing_user';
-const ACCOUNT_KEY_NAME: string = 'accountKey';
+// 与 AuthSessionService.persistPublicState 写入的键保持一致（历史上误用 'accountKey'，无人写入）
+const ACCOUNT_KEY_NAME: string = 'userId';
 const GUEST_ACCOUNT_KEY: string = 'guest';
 
 export class DatabaseService {
@@ -108,13 +109,18 @@ export class DatabaseService {
       'account_key': accountKey
     };
 
-    const seedPredicates = new relationalStore.RdbPredicates('seed');
-    seedPredicates.equalTo('account_key', '');
-    await this.rdbStore.update(valueBucket, seedPredicates);
+    // 认领两类历史数据：旧版本留下的空 account_key 行，
+    // 以及账号键修复前被统一标记为 'guest' 的行（实为用户登录态写入的私有数据）
+    const legacyKeys: string[] = ['', GUEST_ACCOUNT_KEY];
+    for (const legacyKey of legacyKeys) {
+      const seedPredicates = new relationalStore.RdbPredicates('seed');
+      seedPredicates.equalTo('account_key', legacyKey);
+      await this.rdbStore.update(valueBucket, seedPredicates);
 
-    const taskPredicates = new relationalStore.RdbPredicates('echo_task');
-    taskPredicates.equalTo('account_key', '');
-    await this.rdbStore.update(valueBucket, taskPredicates);
+      const taskPredicates = new relationalStore.RdbPredicates('echo_task');
+      taskPredicates.equalTo('account_key', legacyKey);
+      await this.rdbStore.update(valueBucket, taskPredicates);
+    }
   }
 
   async insertSeed(seed: Seed): Promise<number> {

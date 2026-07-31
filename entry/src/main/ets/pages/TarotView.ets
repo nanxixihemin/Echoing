@@ -2,6 +2,8 @@ import { promptAction } from '@kit.ArkUI';
 import router from '@ohos.router';
 import http from '@ohos.net.http';
 import { AppConfig } from '../common/AppConfig';
+import { AuthenticatedHttpClient } from '../service/AuthenticatedHttpClient';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 // === 类型定义 ===
 interface TarotCard {
@@ -43,10 +45,6 @@ interface SiliconFlowReqBody {
   messages: SiliconFlowMessage[];
   temperature: number;
   max_tokens: number;
-  userId?: string;
-  accountKey?: string;
-  nickname?: string;
-  bio?: string;
 }
 interface SiliconFlowChoiceMessage {
   content: string;
@@ -67,9 +65,6 @@ struct TarotReadingApp {
   @State currentCard: ReadingResult | undefined = undefined;
   @State keyword: string = "";
   @State isAILoading: boolean = false;
-  @StorageProp('currentAccountKey') currentAccountKey: string = '';
-  @StorageProp('userNickname') userNickname: string = '';
-  @StorageProp('userBio') userBio: string = '';
 
 
   private tarotCards: TarotCard[] = [
@@ -261,118 +256,142 @@ struct TarotReadingApp {
   ];
 
   build() {
-    Stack({ alignContent: Alignment.TopStart }) {
+    Column() {
+      Row() {
+        Text('‹')
+          .fontSize(28)
+          .fontWeight(600)
+          .fontColor(EchoColors.TEXT_PRIMARY)
+          .width(40)
+          .height(40)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(EchoColors.SURFACE)
+          .border({ width: 1, color: EchoColors.BORDER })
+          .borderRadius(EchoRadius.PILL)
+          .onClick(() => {
+            router.back();
+          })
+
+        Text('塔罗指引')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(EchoColors.TEXT_PRIMARY)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+
+        Text('历史')
+          .fontSize(12)
+          .fontColor(EchoColors.PRIMARY_DARK)
+          .fontWeight(FontWeight.Medium)
+          .width(48)
+          .height(36)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(EchoColors.PRIMARY_SOFT)
+          .borderRadius(EchoRadius.PILL)
+          .onClick(() => {
+            router.pushUrl({
+              url: 'pages/ChatHistoryPage'
+            });
+          })
+      }
+      .width('100%')
+      .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 10 })
+      .alignItems(VerticalAlign.Center)
 
       Scroll() {
-        Column() {
-          // ========== 标题 ==========
-          Text("嵩月塔罗")
-            .fontSize(28)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#5A3A00')
-            .letterSpacing(4)
-            .margin({ bottom: 6 })
+        Column({ space: 18 }) {
+          Column({ space: 6 }) {
+            Text('把注意力放在一个问题上')
+              .fontSize(26)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(EchoColors.TEXT_PRIMARY)
+            Text('它不是替你做决定，而是帮你看见此刻的方向')
+              .fontSize(13)
+              .fontColor(EchoColors.TEXT_SECONDARY)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
 
-          Text("聆听命运的低语")
-            .fontSize(13)
-            .fontColor('#8D6B32')
-            .margin({ bottom: 28 })
-
-          // ========== 输入框==========
-          TextInput({ placeholder: "输入你关心的主题（学业、感情…）" })
-            .width('88%')
-            .height(46)
-            .backgroundColor('#FFFFFF')
-            .border({ width: 1.2, color: '#E0C9A0', radius: 23 })
-            .fontColor('#5A3A00')
-            .placeholderColor('#C4A76D')
+          TextInput({ placeholder: '输入你关心的主题，例如学业、感情或选择' })
+            .width('100%')
+            .height(48)
+            .backgroundColor(EchoColors.SURFACE)
+            .border({ width: 1, color: EchoColors.BORDER })
+            .borderRadius(EchoRadius.SMALL)
+            .fontColor(EchoColors.TEXT_PRIMARY)
+            .placeholderColor(EchoColors.TEXT_TERTIARY)
             .onChange((value: string) => {
               this.keyword = value;
             })
-            .padding({ left: 20, right: 20 })
-            .margin({ bottom: 20 })
+            .padding({ left: 16, right: 16 })
 
-          // ========== 模式选择 ==========
           Row({ space: 8 }) {
             ForEach([0, 1, 2], (index: number) => {
               Text(this.readingModes[index].name)
-                .height(36)
-                .borderRadius(18)
+                .layoutWeight(1)
+                .height(38)
+                .borderRadius(EchoRadius.SMALL)
                 .textAlign(TextAlign.Center)
-                .padding({ left: 14, right: 14 })
-                .backgroundColor(index === this.selectedMode ? '#FFAFCC' : '#F5EDE0')
-                .fontColor(index === this.selectedMode ? '#5A3A00' : '#8D6B32')
-                .fontSize(13)
+                .backgroundColor(index === this.selectedMode ? EchoColors.PRIMARY_SOFT : EchoColors.SURFACE)
+                .fontColor(index === this.selectedMode ? EchoColors.PRIMARY_DARK : EchoColors.TEXT_SECONDARY)
+                .fontSize(12)
                 .fontWeight(index === this.selectedMode ? FontWeight.Bold : FontWeight.Normal)
-                .border({ width: 1.2, color: index === this.selectedMode ? '#7B8794' : '#C0C8D0' })
+                .border({ width: 1, color: index === this.selectedMode ? EchoColors.PRIMARY : EchoColors.BORDER })
                 .onClick(() => {
                   this.selectedMode = index;
                   this.resetReading();
                 })
-                .animation({ duration: 300, curve: Curve.FastOutSlowIn })
             })
           }
-          .margin({ bottom: 24 })
+          .width('100%')
 
-          // ========== 抽牌按钮 ==========
-          Button(this.selectedMode === 0 ? "开启命运之占" : "抽取" + this.readingModes[this.selectedMode].name)
-            .width('78%')
-            .height(48)
-            .borderRadius(24)
-            .backgroundColor('#FFAFCC')
-            .border({ width: 1.2, color: '#8B7E9B' })
-            .fontColor('#5A3A00')
-            .fontSize(16)
+          Button(this.selectedMode === 0 ? '抽一张牌' : '开始' + this.readingModes[this.selectedMode].name)
+            .width('100%')
+            .height(50)
+            .borderRadius(EchoRadius.MEDIUM)
+            .backgroundColor(EchoColors.PRIMARY)
+            .fontColor('#FFFFFF')
+            .fontSize(15)
             .fontWeight(FontWeight.Bold)
-            .shadow({ radius: 6, color: 'rgba(255,175,204,0.4)', offsetY: 2 })
             .onClick(() => {
               this.performReading();
             })
-            .margin({ bottom: 16 })
 
-          // ========== 结果区==========
           if (this.showResults) {
             Column({ space: 12 }) {
-              // 操作按钮在牌面上方
               Row({ space: 10 }) {
-                Button(this.isAILoading ? "感应中…" : "AI 深度解读")
+                Button(this.isAILoading ? '正在解读…' : 'AI 深度解读')
                   .layoutWeight(1)
-                  .height(38)
-                  .borderRadius(19)
-                  .backgroundColor(this.isAILoading ? '#EDE4D6' : '#FFF2CC')
-                  .border({ width: 1.2, color: '#7B8794' })
-                  .fontColor(this.isAILoading ? '#C4A76D' : '#5A3A00')
+                  .height(40)
+                  .borderRadius(EchoRadius.SMALL)
+                  .backgroundColor(this.isAILoading ? EchoColors.SURFACE_MUTED : EchoColors.PRIMARY_SOFT)
+                  .fontColor(this.isAILoading ? EchoColors.TEXT_TERTIARY : EchoColors.PRIMARY_DARK)
                   .fontSize(13)
-                  .fontWeight(FontWeight.Bold)
+                  .fontWeight(FontWeight.Medium)
                   .onClick(() => {
                     if (!this.isAILoading) {
                       this.getAIInterpretation();
                     }
                   })
 
-                Button("查看牌义")
+                Button('查看牌义')
                   .layoutWeight(1)
-                  .height(38)
-                  .borderRadius(19)
-                  .backgroundColor('#E2F0CB')
-                  .border({ width: 1.2, color: '#7B8794' })
-                  .fontColor('#5A3A00')
+                  .height(40)
+                  .borderRadius(EchoRadius.SMALL)
+                  .backgroundColor(EchoColors.MINT_SOFT)
+                  .fontColor(EchoColors.MINT_TEXT)
                   .fontSize(13)
-                  .fontWeight(FontWeight.Bold)
+                  .fontWeight(FontWeight.Medium)
                   .onClick(() => {
-                    if (this.selectedMode === 0) {
-                      // 单牌已直接展示
-                    } else if (this.selectedMode === 1) {
+                    if (this.selectedMode === 1) {
                       this.showThreeCardInterpretation();
-                    } else {
+                    } else if (this.selectedMode === 2) {
                       this.showFullCelticCross();
                     }
                   })
               }
               .width('100%')
-              .padding({ left: 4, right: 4 })
 
-              // 牌面展示
               if (this.selectedMode === 0 && this.currentCard) {
                 this.SingleCardView();
               } else if (this.selectedMode === 1) {
@@ -382,56 +401,19 @@ struct TarotReadingApp {
               }
             }
             .width('100%')
-            .padding({ left: 12, right: 12 })
           }
-
-          // 底部留白
-          Blank(40)
         }
         .width('100%')
-        .padding({ top: 56, bottom: 20 })
+        .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16, bottom: 36 })
         .alignItems(HorizontalAlign.Center)
       }
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)
-
-      // 返回按钮
-      Text("←")
-        .fontSize(20)
-        .fontColor('#5A3A00')
-        .fontWeight(FontWeight.Bold)
-        .width(36)
-        .height(36)
-        .textAlign(TextAlign.Center)
-        .backgroundColor('#FFF2CC')
-        .border({ width: 1.2, color: '#7B8794', radius: 18 })
-        .position({ x: 16, y: 52 })
-        .onClick(() => {
-          router.back();
-        })
-
-      // 右上角回顾历史
-      Text("回顾")
-        .fontSize(12)
-        .fontColor('#5A3A00')
-        .fontWeight(FontWeight.Bold)
-        .padding({ left: 10, right: 10, top: 7, bottom: 7 })
-        .backgroundColor('#F3EBF6')
-        .border({ width: 1.2, color: '#8B7E9B', radius: 10 })
-        .position({ x: '82%', y: 54 })
-        .onClick(() => {
-          router.pushUrl({
-            url: 'pages/ChatHistoryPage'
-          });
-        })
+      .layoutWeight(1)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#EDE4F3')
-    .linearGradient({
-      direction: GradientDirection.Bottom,
-      colors: [['#EDE4F3', 0.0], ['#F5EEF8', 0.4], ['#FFF8F0', 1.0]]
-    })
+    .backgroundColor(EchoColors.PAGE)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -444,19 +426,18 @@ struct TarotReadingApp {
         .objectFit(ImageFit.Cover)
         .borderRadius(12)
         .rotate({ angle: this.currentCard!.isReversed ? 180 : 0 })
-        .shadow({ radius: 12, color: 'rgba(0,0,0,0.15)', offsetY: 4 })
-        .border({ width: 1.5, color: '#E0C9A0' })
+        .border({ width: 1, color: EchoColors.BORDER })
         .margin({ bottom: 20 })
 
       Text(this.currentCard!.card.name)
         .fontSize(24)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#5A3A00')
+        .fontColor(EchoColors.TEXT_PRIMARY)
         .margin({ bottom: 8 })
 
       Text(this.currentCard!.isReversed ? "逆位" : "正位")
         .fontSize(16)
-        .fontColor(this.currentCard!.isReversed ? '#E94057' : '#5A3A00')
+        .fontColor(this.currentCard!.isReversed ? '#E94057' : EchoColors.TEXT_PRIMARY)
         .backgroundColor(this.currentCard!.isReversed ? '#FFE5E5' : '#E2F0CB')
         .padding({ left: 12, right: 12, top: 4, bottom: 4 })
         .borderRadius(12)
@@ -464,7 +445,7 @@ struct TarotReadingApp {
 
       Text(this.currentCard!.isReversed ? this.currentCard!.card.reversedMeaning : this.currentCard!.card.meaning)
         .fontSize(15)
-        .fontColor('#5A3A00')
+        .fontColor(EchoColors.TEXT_PRIMARY)
         .fontWeight(FontWeight.Medium)
         .width('90%')
         .textAlign(TextAlign.Center)
@@ -472,7 +453,7 @@ struct TarotReadingApp {
 
       Text(this.currentCard!.card.description)
         .fontSize(13)
-        .fontColor('#8D6B32')
+        .fontColor(EchoColors.TEXT_SECONDARY)
         .width('90%')
         .textAlign(TextAlign.Center)
         .lineHeight(18)
@@ -480,9 +461,8 @@ struct TarotReadingApp {
     .width('100%')
     .padding({ top: 24, bottom: 24, left: 16, right: 16 })
     .borderRadius(20)
-    .backgroundColor('#FFF6E5')
-    .border({ width: 1, color: '#F18F01' })
-    .shadow({ radius: 8, color: 'rgba(241,143,1,0.1)', offsetY: 2 })
+    .backgroundColor(EchoColors.SURFACE)
+    .border({ width: 1, color: EchoColors.BORDER })
   }
 
   @Builder
@@ -503,19 +483,18 @@ struct TarotReadingApp {
               .objectFit(ImageFit.Cover)
               .borderRadius(8)
               .rotate({ angle: result.isReversed ? 180 : 0 })
-              .border({ width: 1, color: '#E0C9A0' })
-              .shadow({ radius: 6, color: 'rgba(0,0,0,0.1)', offsetY: 2 })
+              .border({ width: 1, color: EchoColors.BORDER })
               .margin({ bottom: 8 })
 
             Text(result.card.name)
               .fontSize(14)
               .fontWeight(FontWeight.Bold)
-              .fontColor('#5A3A00')
+              .fontColor(EchoColors.TEXT_PRIMARY)
               .margin({ bottom: 4 })
 
             Text(result.isReversed ? "逆位" : "正位")
               .fontSize(11)
-              .fontColor(result.isReversed ? '#E94057' : '#5A3A00')
+              .fontColor(result.isReversed ? '#E94057' : EchoColors.TEXT_PRIMARY)
               .backgroundColor(result.isReversed ? '#FFE5E5' : '#E2F0CB')
               .padding({ left: 6, right: 6, top: 2, bottom: 2 })
               .borderRadius(8)
@@ -523,7 +502,7 @@ struct TarotReadingApp {
 
             Text(result.isReversed ? result.card.reversedMeaning : result.card.meaning)
               .fontSize(11)
-              .fontColor('#8D6B32')
+              .fontColor(EchoColors.TEXT_SECONDARY)
               .width(90)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .maxLines(2)
@@ -533,9 +512,8 @@ struct TarotReadingApp {
           .width(106)
           .padding(8)
           .borderRadius(16)
-          .backgroundColor('#FFF6E5')
-          .border({ width: 1.2, color: '#F18F01' })
-          .shadow({ radius: 4, color: 'rgba(241,143,1,0.05)', offsetY: 1 })
+          .backgroundColor(EchoColors.SURFACE)
+          .border({ width: 1, color: EchoColors.BORDER })
           .margin({ left: 4, right: 4 })
         })
       }
@@ -561,7 +539,7 @@ struct TarotReadingApp {
                     .fontColor('#C4A76D')
                   Text(`${this.readingModes[2].positions[index]}`)
                     .fontSize(11)
-                    .fontColor('#8D6B32')
+                    .fontColor(EchoColors.TEXT_SECONDARY)
                     .margin({ top: 2 })
                 }
                 .width(40)
@@ -581,11 +559,11 @@ struct TarotReadingApp {
                     Text(result.card.name)
                       .fontSize(15)
                       .fontWeight(FontWeight.Bold)
-                      .fontColor('#5A3A00')
+                      .fontColor(EchoColors.TEXT_PRIMARY)
                     
                     Text(result.isReversed ? "逆位" : "正位")
                       .fontSize(10)
-                      .fontColor(result.isReversed ? '#E94057' : '#5A3A00')
+                      .fontColor(result.isReversed ? '#E94057' : EchoColors.TEXT_PRIMARY)
                       .backgroundColor(result.isReversed ? '#FFE5E5' : '#E2F0CB')
                       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                       .borderRadius(8)
@@ -595,7 +573,7 @@ struct TarotReadingApp {
 
                   Text(result.isReversed ? result.card.reversedMeaning : result.card.meaning)
                     .fontSize(12)
-                    .fontColor('#8D6B32')
+                    .fontColor(EchoColors.TEXT_SECONDARY)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .maxLines(2)
                     .lineHeight(16)
@@ -606,10 +584,9 @@ struct TarotReadingApp {
               }
               .width('100%')
               .padding(10)
-              .backgroundColor('#FFF6E5')
-              .border({ width: 1.2, color: '#F18F01' })
-              .borderRadius(16)
-              .shadow({ radius: 4, color: 'rgba(241,143,1,0.05)', offsetY: 1 })
+              .backgroundColor(EchoColors.SURFACE)
+              .border({ width: 1, color: EchoColors.BORDER })
+              .borderRadius(EchoRadius.MEDIUM)
             }
           },
           (item: ReadingResult) => item.position
@@ -699,7 +676,7 @@ struct TarotReadingApp {
   private getAIInterpretation(): void {
     if (this.readingResults.length === 0) {
       promptAction.showDialog({
-        title: "⚠️ 尚未抽牌",
+        title: "尚未抽牌",
         message: "请先抽取塔罗牌再请求 AI 解读。",
 
       });
@@ -750,46 +727,23 @@ ${modeName}
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-      max_tokens: 600,
-      userId: this.currentAccountKey,
-      accountKey: this.currentAccountKey,
-      nickname: this.userNickname,
-      bio: this.userBio
+      max_tokens: 600
     };
 
-    const httpRequest = http.createHttp();
-    httpRequest.request(
-      endpoint,
-      {
-        method: http.RequestMethod.POST,
-        header: {
-          'Content-Type': 'application/json'
-        },
-        extraData: JSON.stringify(reqBody),
-        connectTimeout: 15000,
-        readTimeout: 60000
-      },
-      (err, data) => {
-        httpRequest.destroy();
+    AuthenticatedHttpClient.request(endpoint, {
+      method: http.RequestMethod.POST,
+      extraData: JSON.stringify(reqBody),
+      connectTimeout: 15000,
+      readTimeout: 60000
+    }).then((data: http.HttpResponse) => {
         this.isAILoading = false;
 
-        if (err) {
-          console.error('网络请求失败:', JSON.stringify(err));
-          promptAction.showDialog({
-            title: "⚠️网络错误",
-            message: "请检查网络连接或稍后重试。",
-
-          });
-          return;
-        }
-
         if (data.responseCode !== 200) {
-          console.error('HTTP 错误:', data.responseCode, data.result);
           let msg = "服务器返回异常。";
-          if (data.responseCode === 401) msg = "API 密钥无效，请检查是否正确。";
-          if (data.responseCode === 400) msg = "请求格式错误，请确认模型名称。";
+          if (data.responseCode === 400) msg = "请求格式错误，请稍后重试。";
+          if (data.responseCode === 429) msg = "请求过于频繁，请稍后再试。";
           promptAction.showDialog({
-            title: "⚠️服务异常",
+            title: "服务异常",
             message: msg,
 
           });
@@ -802,7 +756,7 @@ ${modeName}
           if (!aiResponse.choices || aiResponse.choices.length === 0) {
             console.error("响应异常 (无choices):", data.result);
             promptAction.showDialog({
-              title: "× 解读失败",
+              title: "解读失败",
               message: "未获取到有效解读数据，请稍后重试。",
             });
             return;
@@ -826,12 +780,17 @@ ${modeName}
         } catch (parseError) {
           console.error('JSON 解析失败:', parseError);
           promptAction.showDialog({
-            title: "× 解读失败",
+            title: "解读失败",
             message: "数据解析失败，请重试。",
 
           });
         }
-      }
-    );
+    }).catch(() => {
+      this.isAILoading = false;
+      promptAction.showDialog({
+        title: "网络错误",
+        message: "请检查网络连接或重新登录。"
+      });
+    });
   }
 }

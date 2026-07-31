@@ -1,25 +1,14 @@
 import { router } from '@kit.ArkUI';
-import { authentication } from '@kit.AccountKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import cloud, { VerifyCodeAction } from '@hw-agconnect/cloud';
 import dataPreferences from '@ohos.data.preferences';
 import common from '@ohos.app.ability.common';
+import { AuthSessionService, EchoingUser } from '../service/AuthSessionService';
+import { EchoColors, EchoRadius, EchoSpacing } from '../utils/EchoTheme';
 
 // 登录模式
 type LoginTab = 'huawei' | 'email';
 type EmailMode = 'signin' | 'signup';
-
-// ---- Echoing 深色霓虹色板 ----
-const M_MINT = '#63F5DC';
-const M_PEACH = '#5CC8FF';
-const M_BG = '#050810';
-const M_CARD = 'rgba(10, 22, 34, 0.78)';
-const M_CARD_SOFT = 'rgba(20, 39, 55, 0.64)';
-const M_INPUT = 'rgba(255, 255, 255, 0.08)';
-const M_TEXT = '#EAFBFF';
-const M_TEXT_SUB = '#8EA7B8';
-const M_BORDER = 'rgba(99, 245, 220, 0.28)';
-const M_BORDER_SOFT = 'rgba(255, 255, 255, 0.10)';
 
 // AGC 接口声明
 interface EmailSignInCredential { kind: 'email'; email: string; password: string; }
@@ -61,14 +50,6 @@ struct LoginPage {
     this.isError = false;
   }
 
-  private buildAccountKey(provider: string, rawId: string, lowerCase: boolean = false): string {
-    const normalizedId: string = lowerCase ? rawId.trim().toLowerCase() : rawId.trim();
-    if (normalizedId.length <= 0) {
-      return '';
-    }
-    return provider + '_' + normalizedId.replace(/[^A-Za-z0-9@._-]/g, '_');
-  }
-
   private profileKey(accountKey: string, field: string): string {
     return 'profile.' + accountKey + '.' + field;
   }
@@ -79,8 +60,14 @@ struct LoginPage {
       const prefs = await dataPreferences.getPreferences(ctx, 'echoing_user');
       const nick: dataPreferences.ValueType = await prefs.get(this.profileKey(accountKey, 'nickname'), '');
       const bio: dataPreferences.ValueType = await prefs.get(this.profileKey(accountKey, 'bio'), '');
-      this.nickname = typeof nick === 'string' ? nick : String(nick);
-      this.bio = typeof bio === 'string' ? bio : String(bio);
+      const storedNickname = typeof nick === 'string' ? nick : String(nick);
+      const storedBio = typeof bio === 'string' ? bio : String(bio);
+      if (storedNickname.length > 0) {
+        this.nickname = storedNickname;
+      }
+      if (storedBio.length > 0) {
+        this.bio = storedBio;
+      }
       return this.nickname.trim().length > 0;
     } catch (err) {
       console.error('testTag', 'Restore account profile failed: ' + JSON.stringify(err));
@@ -96,7 +83,9 @@ struct LoginPage {
       const ctx = getContext(this) as common.UIAbilityContext;
       const prefs = await dataPreferences.getPreferences(ctx, 'echoing_user');
       await prefs.put('isLoggedIn', true);
-      await prefs.put('accountKey', this.currentAccountKey);
+      await prefs.put('hasSession', true);
+      await prefs.put('userId', this.currentAccountKey);
+      await prefs.delete('accountKey');
       await prefs.put('nickname', this.nickname);
       await prefs.put('bio', this.bio);
       if (this.currentAccountKey.length > 0) {
@@ -126,20 +115,23 @@ struct LoginPage {
     router.replaceUrl({ url: 'pages/Index' });
   }
 
-  private logout(): void {
+  private async logout(): Promise<void> {
+    await AuthSessionService.getInstance().logout();
     this.isLoggedIn = false;
-    this.persistLogoutState().then(() => {
-      this.showStatus('\u5df2\u9000\u51fa\u767b\u5f55');
-    });
+    this.currentAccountKey = '';
+    await this.persistLogoutState();
+    this.showStatus('\u5df2\u9000\u51fa\u767b\u5f55');
   }
 
-  private completeSignIn(accountKey: string): void {
-    if (accountKey.length <= 0) {
+  private completeSignIn(user: EchoingUser): void {
+    if (user.id.length <= 0) {
       this.showStatus('登录失败：缺少账号标识', true);
       return;
     }
-    this.currentAccountKey = accountKey;
-    this.restoreProfileForAccount(accountKey).then((profileReady: boolean) => {
+    this.currentAccountKey = user.id;
+    this.nickname = user.nickname;
+    this.bio = user.bio;
+    this.restoreProfileForAccount(user.id).then((profileReady: boolean) => {
       this.isLoggedIn = true;
       if (!profileReady) {
         this.showStatus('登录成功，请设置你的资料');
@@ -157,20 +149,26 @@ struct LoginPage {
   private doHuaweiSignIn(): void {
     this.isLoading = true;
     this.showStatus('正在拉起华为账号…');
-    const request = new authentication.HuaweiIDProvider().createLoginWithHuaweiIDRequest();
-    request.forceLogin = false;
-    request.state = String(new Date().getTime());
-    const authController = new authentication.AuthenticationController();
-    authController.executeRequest(request).then((response: authentication.LoginWithHuaweiIDResponse) => {
-      const data: authentication.LoginWithHuaweiIDCredential = response.data!;
-      console.info('testTag', `华为账号 openID: ${data.openID ?? ''}`);
-      // 登录成功 → 更新全局状态（AppStorage 自动同步到所有 @StorageLink 页面）
-      this.completeSignIn(this.buildAccountKey('huawei', data.openID ?? ''));
+    AuthSessionService.getInstance().signInWithHuawei().then((user: EchoingUser) => {
+      this.completeSignIn(user);
     }).catch((err: BusinessError) => {
-      if (err.code === 1001502001 || (err.message ?? '').indexOf('cancel') >= 0) {
-        this.showStatus('已取消');
+      const code = Number(err?.code ?? 0);
+      const message = String(err?.message ?? '未知错误');
+      console.error('HuaweiLogin', `code=${code}, message=${message}`);
+      if (code === 1001502001 || message.toLowerCase().indexOf('cancel') >= 0) {
+        this.showStatus(`已取消（${code}）`);
+      } else if (code === 1001500001) {
+        this.showStatus(`登录失败：应用签名指纹未配置（${code}）`, true);
+      } else if (code === 1001502002) {
+        this.showStatus(`登录失败：应用未授权（${code}）`, true);
+      } else if (code === 1001502005) {
+        this.showStatus(`登录失败：网络错误（${code}）`, true);
+      } else if (code === 1001502009) {
+        this.showStatus(`登录失败：华为账号服务内部错误（${code}）`, true);
+      } else if (code === 1001500003) {
+        this.showStatus(`登录失败：当前账号或地区不支持（${code}）`, true);
       } else {
-        this.showStatus(`登录失败: ${err.message}`, true);
+        this.showStatus(`登录失败（错误码 ${code}）：${message}`, true);
       }
     }).finally(() => { this.isLoading = false; });
   }
@@ -184,7 +182,9 @@ struct LoginPage {
       credentialInfo: { kind: 'email', email: this.email, password: this.password }
     };
     cloud.auth().signIn(params).then(() => {
-      this.completeSignIn(this.buildAccountKey('email', this.email, true));
+      return AuthSessionService.getInstance().signInWithAgc();
+    }).then((user: EchoingUser) => {
+      this.completeSignIn(user);
     }).catch((err: BusinessError) => {
       this.showStatus(`登录失败：${err.message}`, true);
     }).finally(() => { this.isLoading = false; });
@@ -229,168 +229,162 @@ struct LoginPage {
   }
 
   // ---- 保存用户资料并持久化 ----
-  private saveProfile(): void {
+  private async saveProfile(): Promise<void> {
     const trimmedNickname: string = this.nickname.trim();
     const trimmedBio: string = this.bio.trim();
     if (!trimmedNickname) { this.showStatus('\u8bf7\u8f93\u5165\u6635\u79f0', true); return; }
     if (this.currentAccountKey.length <= 0) { this.showStatus('缺少账号标识，请重新登录', true); return; }
     this.nickname = trimmedNickname;
     this.bio = trimmedBio;
-    this.persistLoginState().then(() => {
+    try {
+      await AuthSessionService.getInstance().updateProfile(trimmedNickname, trimmedBio);
+      await this.persistLoginState();
       this.showStatus('\u8d44\u6599\u5df2\u4fdd\u5b58');
       setTimeout(() => { this.goHome(); }, 500);
-    });
+    } catch (error) {
+      this.showStatus('资料保存失败，请重新登录', true);
+    }
   }
 
   build() {
     Column() {
-      // ---- 返回按钮 ----
       Row() {
         Text('‹')
           .fontSize(28)
-          .fontWeight(700)
-          .fontColor(M_TEXT)
-          .width(36)
-          .height(36)
+          .fontWeight(600)
+          .fontColor(EchoColors.TEXT_PRIMARY)
+          .width(40)
+          .height(40)
           .textAlign(TextAlign.Center)
-          .borderRadius(18)
-          .backgroundColor(M_INPUT)
-          .border({ width: 1, color: M_BORDER })
-          .shadow({ radius: 14, color: 'rgba(99, 245, 220, 0.12)' })
+          .borderRadius(EchoRadius.PILL)
+          .backgroundColor(EchoColors.SURFACE)
+          .border({ width: 1, color: EchoColors.BORDER })
           .onClick(() => { router.back(); })
       }
       .width('100%')
-      .padding({ left: 24, top: 56 })
+      .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 16 })
 
-      // ---- 标题 ----
-      Column({ space: 10 }) {
-        Row({ space: 12 }) {
-          Column() {
-            Image($r('app.media.echoing_icon'))
-              .width(44)
-              .height(44)
-              .borderRadius(22)
+      Scroll() {
+        Column({ space: EchoSpacing.LARGE }) {
+          Row({ space: EchoSpacing.MEDIUM }) {
+            Column() {
+              Image($r('app.media.echoing_icon'))
+                .width(44)
+                .height(44)
+                .borderRadius(EchoRadius.MEDIUM)
+            }
+            .width(56)
+            .height(56)
+            .borderRadius(EchoRadius.LARGE)
+            .backgroundColor(EchoColors.PRIMARY_SOFT)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+
+            Column({ space: 4 }) {
+              Text(this.isLoggedIn ? '完善个人资料' : '欢迎回来')
+                .fontSize(28)
+                .fontWeight(700)
+                .fontColor(EchoColors.TEXT_PRIMARY)
+              Text(this.isLoggedIn ? '留下一个自然的称呼，继续你的记录' : '登录后，在不同设备间延续你的回声')
+                .fontSize(13)
+                .fontColor(EchoColors.TEXT_SECONDARY)
+                .maxLines(2)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
           }
-          .width(56)
-          .height(56)
-          .borderRadius(28)
-          .backgroundColor('rgba(99, 245, 220, 0.12)')
-          .border({ width: 1.5, color: M_BORDER })
-          .shadow({ radius: 24, color: 'rgba(99, 245, 220, 0.32)' })
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
 
-          Column({ space: 3 }) {
-            Text('Echoing')
-              .fontSize(30)
-              .fontWeight(800)
-              .fontColor(M_TEXT)
-            Text(this.isLoggedIn ? '完善你的个人资料' : '登录以同步你的回声')
-              .fontSize(13)
-              .fontColor(M_TEXT_SUB)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Column({ space: 16 }) {
+            if (this.isLoggedIn) {
+              this.ProfileSection()
+            } else {
+              this.LoginFormSection()
+            }
+
+            if (this.statusMsg.length > 0) {
+              Text(this.statusMsg)
+                .fontSize(12)
+                .fontWeight(500)
+                .fontColor(this.isError ? EchoColors.PINK_TEXT : EchoColors.MINT_TEXT)
+                .textAlign(TextAlign.Center)
+                .width('100%')
+                .padding({ top: 10, bottom: 10, left: 12, right: 12 })
+                .backgroundColor(this.isError ? EchoColors.PINK_SOFT : EchoColors.MINT_SOFT)
+                .borderRadius(EchoRadius.SMALL)
+            }
           }
-          .alignItems(HorizontalAlign.Start)
-        }
-        .justifyContent(FlexAlign.Center)
+          .width('100%')
+          .padding(EchoSpacing.LARGE)
+          .borderRadius(EchoRadius.LARGE)
+          .backgroundColor(EchoColors.SURFACE)
+          .border({ width: 1, color: EchoColors.BORDER })
 
-      }
-      .alignItems(HorizontalAlign.Center)
-      .margin({ top: 22, bottom: 24 })
-
-      Column({ space: 16 }) {
-        if (this.isLoggedIn) {
-          // ---- 登录后：设置资料 ----
-          this.ProfileSection()
-        } else {
-          // ---- 登录前：Tab + 表单 ----
-          this.LoginFormSection()
-        }
-
-        // ---- 状态提示 ----
-        if (this.statusMsg.length > 0) {
-          Text(this.statusMsg)
-            .fontSize(12)
-            .fontWeight(500)
-            .fontColor(this.isError ? '#FF9CAA' : M_MINT)
+          Text('登录即代表你已阅读并同意服务协议与隐私政策')
+            .fontSize(11)
+            .fontColor(EchoColors.TEXT_TERTIARY)
             .textAlign(TextAlign.Center)
             .width('100%')
-            .padding({ top: 10, bottom: 10, left: 12, right: 12 })
-            .backgroundColor(this.isError ? 'rgba(255, 122, 154, 0.12)' : 'rgba(99, 245, 220, 0.10)')
-            .borderRadius(14)
-            .border({ width: 1, color: this.isError ? 'rgba(255, 122, 154, 0.30)' : M_BORDER })
+            .margin({ bottom: 24 })
         }
+        .width('100%')
+        .padding({ left: EchoSpacing.PAGE, right: EchoSpacing.PAGE, top: 24 })
+        .alignItems(HorizontalAlign.Center)
       }
-      .width('88%')
-      .padding({ left: 18, right: 18, top: 22, bottom: 22 })
-      .borderRadius(28)
-      .backgroundColor(M_CARD)
-      .border({ width: 1, color: M_BORDER })
-      .shadow({ radius: 30, color: 'rgba(0, 240, 255, 0.16)' })
-
-      Blank()
-
-      Text('登录即代表同意服务协议与隐私政策')
-        .fontSize(11)
-        .fontColor(M_TEXT_SUB)
-        .opacity(0.72)
-        .margin({ bottom: 32 })
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(M_BG)
-    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(EchoColors.PAGE)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
-  // ---- 登录表单区 ----
   @Builder
   LoginFormSection() {
     Column({ space: 16 }) {
-      // Tab 切换
       Row() {
-        Text('华为账号')
-          .layoutWeight(1)
-          .height(42)
-          .textAlign(TextAlign.Center)
-          .fontSize(14)
-          .fontWeight(600)
-          .fontColor(this.activeTab === 'huawei' ? M_BG : M_TEXT_SUB)
-          .backgroundColor(this.activeTab === 'huawei' ? M_MINT : 'transparent')
-          .borderRadius(16)
-          .onClick(() => { this.activeTab = 'huawei'; this.clearStatus(); })
-
-        Text('邮箱登录')
-          .layoutWeight(1)
-          .height(42)
-          .textAlign(TextAlign.Center)
-          .fontSize(14)
-          .fontWeight(600)
-          .fontColor(this.activeTab === 'email' ? M_BG : M_TEXT_SUB)
-          .backgroundColor(this.activeTab === 'email' ? M_MINT : 'transparent')
-          .borderRadius(16)
-          .onClick(() => { this.activeTab = 'email'; this.clearStatus(); })
+        this.LoginTabItem('华为账号', this.activeTab === 'huawei', () => {
+          this.activeTab = 'huawei';
+          this.clearStatus();
+        })
+        this.LoginTabItem('邮箱', this.activeTab === 'email', () => {
+          this.activeTab = 'email';
+          this.clearStatus();
+        })
       }
       .width('100%')
       .padding(4)
-      .backgroundColor(M_INPUT)
-      .borderRadius(20)
-      .border({ width: 1, color: M_BORDER_SOFT })
+      .backgroundColor(EchoColors.SURFACE_MUTED)
+      .borderRadius(EchoRadius.MEDIUM)
 
       if (this.activeTab === 'huawei') {
-        // 华为登录 - 简洁一个按钮
-        Button(this.isLoading ? '请稍候…' : '使用华为账号登录')
+        Column({ space: EchoSpacing.MEDIUM }) {
+          Column({ space: 6 }) {
+            Text('使用华为账号继续')
+              .fontSize(17)
+              .fontWeight(600)
+              .fontColor(EchoColors.TEXT_PRIMARY)
+            Text('快速登录并安全同步你的个人记录')
+              .fontSize(13)
+              .fontColor(EchoColors.TEXT_SECONDARY)
+          }
           .width('100%')
-          .height(50)
-          .fontSize(16)
-          .fontWeight(700)
-          .fontColor(M_BG)
-          .backgroundColor(M_MINT)
-          .borderRadius(18)
-          .shadow({ radius: 16, color: 'rgba(99, 245, 220, 0.24)' })
-          .enabled(!this.isLoading)
-          .onClick(() => { this.doHuaweiSignIn(); })
+          .alignItems(HorizontalAlign.Start)
+
+          Button(this.isLoading ? '正在连接…' : '使用华为账号登录')
+            .width('100%')
+            .height(50)
+            .fontSize(15)
+            .fontWeight(600)
+            .fontColor('#FFFFFF')
+            .backgroundColor(EchoColors.PRIMARY)
+            .borderRadius(EchoRadius.MEDIUM)
+            .enabled(!this.isLoading)
+            .onClick(() => { this.doHuaweiSignIn(); })
+        }
+        .width('100%')
       } else {
         this.EmailSection()
       }
@@ -399,82 +393,78 @@ struct LoginPage {
     .alignItems(HorizontalAlign.Center)
   }
 
-  // ---- 邮箱区 ----
+  @Builder
+  LoginTabItem(label: string, selected: boolean, onClick: () => void) {
+    Text(label)
+      .layoutWeight(1)
+      .height(40)
+      .textAlign(TextAlign.Center)
+      .fontSize(14)
+      .fontWeight(600)
+      .fontColor(selected ? EchoColors.PRIMARY_DARK : EchoColors.TEXT_SECONDARY)
+      .backgroundColor(selected ? EchoColors.SURFACE : 'transparent')
+      .borderRadius(EchoRadius.SMALL)
+      .onClick(onClick)
+  }
+
   @Builder
   EmailSection() {
     Column({ space: 12 }) {
-      // 登录/注册切换
       Row() {
-        Text('登录')
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .fontSize(13)
-          .fontWeight(600)
-          .fontColor(this.emailMode === 'signin' ? M_BG : M_TEXT_SUB)
-          .backgroundColor(this.emailMode === 'signin' ? M_PEACH : 'transparent')
-          .borderRadius(14)
-          .height(32)
-          .onClick(() => { this.emailMode = 'signin'; this.clearStatus(); })
-
-        Text('注册')
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .fontSize(13)
-          .fontWeight(600)
-          .fontColor(this.emailMode === 'signup' ? M_BG : M_TEXT_SUB)
-          .backgroundColor(this.emailMode === 'signup' ? M_PEACH : 'transparent')
-          .borderRadius(14)
-          .height(32)
-          .onClick(() => { this.emailMode = 'signup'; this.clearStatus(); })
+        this.EmailModeItem('登录', this.emailMode === 'signin', () => {
+          this.emailMode = 'signin';
+          this.clearStatus();
+        })
+        this.EmailModeItem('注册', this.emailMode === 'signup', () => {
+          this.emailMode = 'signup';
+          this.clearStatus();
+        })
       }
       .width('100%')
       .padding(3)
-      .backgroundColor(M_INPUT)
-      .borderRadius(17)
-      .border({ width: 1, color: M_BORDER_SOFT })
+      .backgroundColor(EchoColors.PAGE)
+      .borderRadius(EchoRadius.MEDIUM)
 
       this.SoftInput('邮箱地址', InputType.Email, (v: string) => { this.email = v; })
       this.SoftInput('密码', InputType.Password, (v: string) => { this.password = v; })
 
       if (this.emailMode === 'signup') {
         this.SoftInput('确认密码', InputType.Password, (v: string) => { this.confirmPassword = v; })
-        Row({ space: 8 }) {
+        Row({ space: EchoSpacing.SMALL }) {
           TextInput({ placeholder: '验证码' })
             .type(InputType.Number)
             .maxLength(6)
             .layoutWeight(1)
-            .height(46)
-            .borderRadius(16)
-            .backgroundColor(M_INPUT)
-            .fontColor(M_TEXT)
-            .placeholderColor(M_TEXT_SUB)
-            .border({ width: 1, color: M_BORDER_SOFT })
+            .height(48)
+            .borderRadius(EchoRadius.SMALL)
+            .backgroundColor(EchoColors.PAGE)
+            .fontColor(EchoColors.TEXT_PRIMARY)
+            .placeholderColor(EchoColors.TEXT_TERTIARY)
+            .border({ width: 1, color: EchoColors.BORDER })
             .onChange((v: string) => { this.verifyCode = v; })
 
-          Button(this.canSendCode ? '发送' : `${this.countdown}s`)
-            .width(68)
-            .height(46)
-            .fontSize(13)
+          Button(this.canSendCode ? '发送验证码' : `${this.countdown}s`)
+            .width(96)
+            .height(48)
+            .fontSize(12)
             .fontWeight(600)
-            .borderRadius(16)
+            .borderRadius(EchoRadius.SMALL)
             .enabled(this.canSendCode)
-            .backgroundColor(this.canSendCode ? M_PEACH : M_CARD_SOFT)
-            .fontColor(this.canSendCode ? M_BG : M_TEXT_SUB)
-            .border({ width: 1, color: M_BORDER_SOFT })
+            .backgroundColor(this.canSendCode ? EchoColors.PRIMARY_SOFT : EchoColors.SURFACE_MUTED)
+            .fontColor(this.canSendCode ? EchoColors.PRIMARY_DARK : EchoColors.TEXT_TERTIARY)
             .onClick(() => { this.sendRegisterCode(); })
         }
         .width('100%')
       }
 
-      Button(this.isLoading ? '请稍候…' : (this.emailMode === 'signin' ? '登  录' : '注  册'))
+      Button(this.isLoading ? '请稍候…' : (this.emailMode === 'signin' ? '登录' : '创建账号'))
         .width('100%')
         .height(50)
-        .fontSize(16)
-        .fontWeight(700)
-        .fontColor(M_BG)
-        .backgroundColor(M_MINT)
-        .borderRadius(18)
-        .shadow({ radius: 16, color: 'rgba(99, 245, 220, 0.24)' })
+        .fontSize(15)
+        .fontWeight(600)
+        .fontColor('#FFFFFF')
+        .backgroundColor(EchoColors.PRIMARY)
+        .borderRadius(EchoRadius.MEDIUM)
         .enabled(!this.isLoading)
         .margin({ top: 4 })
         .onClick(() => {
@@ -486,104 +476,96 @@ struct LoginPage {
     .alignItems(HorizontalAlign.Center)
   }
 
-  // ---- 登录后：个人资料设置 ----
+  @Builder
+  EmailModeItem(label: string, selected: boolean, onClick: () => void) {
+    Text(label)
+      .layoutWeight(1)
+      .textAlign(TextAlign.Center)
+      .fontSize(13)
+      .fontWeight(600)
+      .fontColor(selected ? EchoColors.PRIMARY_DARK : EchoColors.TEXT_SECONDARY)
+      .backgroundColor(selected ? EchoColors.PRIMARY_SOFT : 'transparent')
+      .borderRadius(EchoRadius.SMALL)
+      .height(34)
+      .onClick(onClick)
+  }
+
   @Builder
   ProfileSection() {
     Column({ space: 16 }) {
       Column({ space: 4 }) {
-        Text(this.nickname.trim().length > 0 ? this.nickname : '个人资料')
+        Text(this.nickname.trim().length > 0 ? this.nickname : '设置个人资料')
           .fontSize(20)
           .fontWeight(700)
-          .fontColor(M_TEXT)
+          .fontColor(EchoColors.TEXT_PRIMARY)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text('昵称和签名会保存在本机')
+        Text('昵称和签名会与你的账号一起保存')
           .fontSize(12)
-          .fontColor(M_TEXT_SUB)
+          .fontColor(EchoColors.TEXT_SECONDARY)
       }
       .width('100%')
-      .padding({ top: 2, bottom: 4 })
-      .alignItems(HorizontalAlign.Center)
+      .alignItems(HorizontalAlign.Start)
 
-      // 昵称
-      Column({ space: 4 }) {
-        Text('昵称')
-          .fontSize(12)
-          .fontColor(M_TEXT_SUB)
-          .fontWeight(500)
-          .width('100%')
-          .padding({ left: 4 })
-        TextInput({ placeholder: '给自己取个名字吧', text: this.nickname })
-          .width('100%')
-          .height(46)
-          .borderRadius(16)
-          .backgroundColor(M_INPUT)
-          .fontColor(M_TEXT)
-          .fontWeight(600)
-          .placeholderColor(M_TEXT_SUB)
-          .border({ width: 1, color: M_BORDER_SOFT })
-          .onChange((v: string) => { this.nickname = v; })
-      }
-      .width('100%')
+      this.ProfileInput('昵称', '给自己取个名字吧', this.nickname, (v: string) => { this.nickname = v; })
+      this.ProfileInput('一句话签名', '说点什么（选填）', this.bio, (v: string) => { this.bio = v; })
 
-      // 个性签名
-      Column({ space: 4 }) {
-        Text('一句话签名')
-          .fontSize(12)
-          .fontColor(M_TEXT_SUB)
-          .fontWeight(500)
-          .width('100%')
-          .padding({ left: 4 })
-        TextInput({ placeholder: '说点什么…（选填）', text: this.bio })
-          .width('100%')
-          .height(46)
-          .borderRadius(16)
-          .backgroundColor(M_INPUT)
-          .fontColor(M_TEXT)
-          .fontWeight(600)
-          .placeholderColor(M_TEXT_SUB)
-          .border({ width: 1, color: M_BORDER_SOFT })
-          .onChange((v: string) => { this.bio = v; })
-      }
-      .width('100%')
-
-      // Profile actions
-      Button('\u4fdd\u5b58\u5e76\u8fdb\u5165')
+      Button('保存并进入')
         .width('100%')
         .height(50)
-        .fontSize(16)
-        .fontWeight(700)
-        .fontColor(M_BG)
-        .backgroundColor(M_MINT)
-        .borderRadius(18)
-        .shadow({ radius: 16, color: 'rgba(99, 245, 220, 0.24)' })
-        .margin({ top: 6 })
+        .fontSize(15)
+        .fontWeight(600)
+        .fontColor('#FFFFFF')
+        .backgroundColor(EchoColors.PRIMARY)
+        .borderRadius(EchoRadius.MEDIUM)
+        .margin({ top: 4 })
         .onClick(() => { this.saveProfile(); })
 
-      Text('\u9000\u51fa\u767b\u5f55')
+      Text('退出登录')
         .fontSize(13)
         .fontWeight(500)
-        .fontColor('#FF9CAA')
-        .padding({ top: 8, bottom: 4 })
+        .fontColor(EchoColors.PINK_TEXT)
+        .padding({ top: 6, bottom: 2 })
         .onClick(() => { this.logout(); })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
   }
 
-  // ---- 输入框 ----
+  @Builder
+  ProfileInput(label: string, placeholder: string, value: string, onChange: (v: string) => void) {
+    Column({ space: 6 }) {
+      Text(label)
+        .fontSize(12)
+        .fontColor(EchoColors.TEXT_SECONDARY)
+        .fontWeight(500)
+        .width('100%')
+      TextInput({ placeholder: placeholder, text: value })
+        .width('100%')
+        .height(48)
+        .borderRadius(EchoRadius.SMALL)
+        .backgroundColor(EchoColors.PAGE)
+        .fontColor(EchoColors.TEXT_PRIMARY)
+        .fontWeight(500)
+        .placeholderColor(EchoColors.TEXT_TERTIARY)
+        .border({ width: 1, color: EchoColors.BORDER })
+        .onChange(onChange)
+    }
+    .width('100%')
+  }
+
   @Builder
   SoftInput(placeholder: string, type: InputType, onChange: (v: string) => void) {
     TextInput({ placeholder: placeholder })
       .type(type)
       .width('100%')
-      .height(46)
-      .borderRadius(16)
-      .backgroundColor(M_INPUT)
-      .fontColor(M_TEXT)
-      .fontWeight(600)
-      .placeholderColor(M_TEXT_SUB)
-      .border({ width: 1, color: M_BORDER_SOFT })
+      .height(48)
+      .borderRadius(EchoRadius.SMALL)
+      .backgroundColor(EchoColors.PAGE)
+      .fontColor(EchoColors.TEXT_PRIMARY)
+      .fontWeight(500)
+      .placeholderColor(EchoColors.TEXT_TERTIARY)
+      .border({ width: 1, color: EchoColors.BORDER })
       .onChange(onChange)
   }
 }

@@ -6,6 +6,7 @@ import common from '@ohos.app.ability.common';
 import http from '@ohos.net.http';
 import hilog from '@ohos.hilog';
 import { AppConfig } from '../common/AppConfig';
+import { AuthenticatedHttpClient } from './AuthenticatedHttpClient';
 
 const TAG: string = 'ChatHistoryManager';
 const DOMAIN: number = 0xFF01;
@@ -96,12 +97,12 @@ export class ChatHistoryManager {
 
   private async refreshAccountIdentity(context: common.UIAbilityContext): Promise<void> {
     const accountPrefs = await dataPreferences.getPreferences(context, ACCOUNT_PREF_NAME);
-    const storedAccountKey = await accountPrefs.get('accountKey', '') as string;
-    if (storedAccountKey.length > 0) {
-      this.accountKey = storedAccountKey;
-      this.userId = storedAccountKey;
-      const nick = await accountPrefs.get(`profile.${storedAccountKey}.nickname`, '') as string;
-      const bio = await accountPrefs.get(`profile.${storedAccountKey}.bio`, '') as string;
+    const storedUserId = await accountPrefs.get('userId', '') as string;
+    if (storedUserId.length > 0) {
+      this.accountKey = storedUserId;
+      this.userId = storedUserId;
+      const nick = await accountPrefs.get(`profile.${storedUserId}.nickname`, '') as string;
+      const bio = await accountPrefs.get(`profile.${storedUserId}.bio`, '') as string;
       const legacyNick = await accountPrefs.get('nickname', '') as string;
       const legacyBio = await accountPrefs.get('bio', '') as string;
       this.nickname = nick.length > 0 ? nick : legacyNick;
@@ -254,88 +255,56 @@ export class ChatHistoryManager {
   // ==================== 云端同步 ====================
 
   private syncToCloud(session: ChatSession): void {
-    try {
-      const httpReq = http.createHttp();
-      httpReq.request(
-        `${CLOUD_BASE}/api/sessions`,
-        {
-          method: http.RequestMethod.POST,
-          header: {
-            'Content-Type': 'application/json',
-            'X-User-Id': this.userId,
-            'X-Account-Key': this.accountKey || this.userId
-          },
-          extraData: JSON.stringify(session),
-          connectTimeout: 5000,
-          readTimeout: 10000
-        },
-        (err, data) => {
-          httpReq.destroy();
-          if (err) {
-            hilog.warn(DOMAIN, TAG, `Cloud sync failed (offline mode): ${err.message}`);
-          } else {
-            hilog.info(DOMAIN, TAG, `Cloud sync OK`);
-          }
-        }
-      );
-    } catch (e) {
-      hilog.warn(DOMAIN, TAG, 'Cloud sync skipped');
-    }
+    const cloudPayload: ChatSession = {
+      id: session.id,
+      theme: session.theme,
+      summary: session.summary,
+      systemPrompt: session.systemPrompt,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      messages: session.messages
+    };
+    AuthenticatedHttpClient.request(`${CLOUD_BASE}/api/sessions`, {
+      method: http.RequestMethod.POST,
+      extraData: JSON.stringify(cloudPayload),
+      connectTimeout: 5000,
+      readTimeout: 10000
+    }).then(() => {
+      hilog.info(DOMAIN, TAG, 'Cloud sync OK');
+    }).catch((error: Error) => {
+      hilog.warn(DOMAIN, TAG, `Cloud sync failed (offline mode): ${error.message}`);
+    });
   }
 
   private cloudDelete(sessionId: string): void {
-    try {
-      const httpReq = http.createHttp();
-      httpReq.request(
-        `${CLOUD_BASE}/api/sessions/${sessionId}?userId=${encodeURIComponent(this.userId)}&accountKey=${encodeURIComponent(this.accountKey || this.userId)}`,
-        {
-          method: http.RequestMethod.DELETE,
-          connectTimeout: 5000,
-          readTimeout: 5000
-        },
-        (err) => {
-          httpReq.destroy();
-        }
-      );
-    } catch (e) {
-      // ignore
-    }
+    AuthenticatedHttpClient.request(`${CLOUD_BASE}/api/sessions/${sessionId}`, {
+      method: http.RequestMethod.DELETE,
+      connectTimeout: 5000,
+      readTimeout: 5000
+    }).catch(() => {});
   }
 
   // ==================== AI 记忆上下文 ====================
 
   public getMemoryContext(callback: (context: string) => void): void {
-    try {
-      const httpReq = http.createHttp();
-      httpReq.request(
-        `${CLOUD_BASE}/api/memory-context?userId=${encodeURIComponent(this.userId)}&accountKey=${encodeURIComponent(this.accountKey || this.userId)}`,
-        {
-          method: http.RequestMethod.GET,
-          header: {
-            'X-User-Id': this.userId,
-            'X-Account-Key': this.accountKey || this.userId
-          },
-          connectTimeout: 3000,
-          readTimeout: 5000
-        },
-        (err, data) => {
-          httpReq.destroy();
-          if (err || data.responseCode !== 200) {
-            // 云端不通，回退到本地生成
-            this.getLocalMemoryContext(callback);
-            return;
-          }
-          try {
-            const resp = JSON.parse(data.result as string) as MemoryContextResp;
-            callback(resp.context);
-          } catch (e) {
-            callback('');
-          }
-        }
-      );
-    } catch (e) {
+    AuthenticatedHttpClient.request(`${CLOUD_BASE}/api/memory-context`, {
+      method: http.RequestMethod.GET,
+      connectTimeout: 3000,
+      readTimeout: 5000
+    }).then((data: http.HttpResponse) => {
+      if (data.responseCode !== 200) {
+        this.getLocalMemoryContext(callback);
+        return;
+      }
+      try {
+        const resp = JSON.parse(data.result as string) as MemoryContextResp;
+        callback(resp.context);
+      } catch (error) {
+        callback('');
+      }
+    }).catch(() => {
       this.getLocalMemoryContext(callback);
-    }
+    });
   }
 
   private async getLocalMemoryContext(callback: (context: string) => void): Promise<void> {
