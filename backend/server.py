@@ -37,17 +37,35 @@ PORT = int(os.environ.get("PORT", "8111"))
 
 from database import DB_PATH, init_database
 from services.ai_history_service import AIHistoryService
-from services.app_user_service import AppUserError, AppUserService
+from services.app_auth_service import AppAuthError, AppAuthService, AppAuthValidationError
 from services.auth_service import AuthError, AuthService
 from services.chat_session_service import ChatSessionError, ChatSessionService
+from services.provider_token_verifier import (
+    ProviderConfigurationError,
+    ProviderUnavailableError,
+    ProviderVerificationError,
+)
+from services.rate_limit_service import RateLimitExceeded, RateLimitService
 from services.shared_forest_service import NotFoundError, SharedForestService, ValidationError
 
 
 shared_forest_service = SharedForestService()
 auth_service = AuthService()
 ai_history_service = AIHistoryService()
-app_user_service = AppUserService()
+app_auth_service = AppAuthService()
 chat_session_service = ChatSessionService()
+rate_limit_service = RateLimitService()
+
+
+MAX_JSON_BODY_BYTES = 1024 * 1024
+MAX_AI_BODY_BYTES = 128 * 1024
+MAX_AI_MESSAGES = 50
+MAX_AI_MESSAGE_LENGTH = 8000
+MAX_AI_TOKENS = 1200
+
+
+class RequestBodyTooLarge(ValueError):
+    pass
 
 
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -59,15 +77,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         route = urlparse(self.path)
         if route.path == "/health":
-            self.send_json(
-                200,
-                {
-                    "ok": True,
-                    "provider": "modelscope",
-                    "api_base": API_BASE,
-                    "database": str(DB_PATH),
-                },
-            )
+            self.send_json(200, {"ok": True})
             return
         if route.path == "/admin":
             self.send_admin_page()
@@ -78,22 +88,40 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_json(200, shared_forest_service.list_leaves(limit))
             return
         if route.path == "/api/sessions":
-            query = parse_qs(route.query)
-            account_key = self.resolve_account_key(query=query)
-            if not account_key:
-                self.send_json(400, {"error": "accountKey is required"})
-                return
-            limit = self.parse_int(query.get("limit", ["100"])[0], 100)
-            self.send_json(200, chat_session_service.list_sessions(account_key, limit))
+            try:
+                app_user = self.require_app_user()
+                query = parse_qs(route.query)
+                limit = self.parse_int(query.get("limit", ["100"])[0], 100)
+                self.send_json(200, chat_session_service.list_sessions(app_user, limit))
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
+            return
+        if route.path.startswith("/api/sessions/"):
+            try:
+                app_user = self.require_app_user()
+                session_id = route.path.removeprefix("/api/sessions/").strip("/")
+                session = chat_session_service.get_session(session_id, app_user)
+                if session is None:
+                    self.send_json(404, {"error": "not_found", "message": "session not found"})
+                else:
+                    self.send_json(200, session)
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
             return
         if route.path == "/api/memory-context":
-            query = parse_qs(route.query)
-            account_key = self.resolve_account_key(query=query)
-            if not account_key:
-                self.send_json(200, {"context": "", "count": 0})
-                return
-            limit = self.parse_int(query.get("limit", ["5"])[0], 5)
-            self.send_json(200, chat_session_service.memory_context(account_key, limit))
+            try:
+                app_user = self.require_app_user()
+                query = parse_qs(route.query)
+                limit = self.parse_int(query.get("limit", ["5"])[0], 5)
+                self.send_json(200, chat_session_service.memory_context(app_user, limit))
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
+            return
+        if route.path == "/api/app-auth/me":
+            try:
+                self.send_json(200, {"user": self.public_app_user(self.require_app_user())})
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
             return
         if route.path == "/api/auth/me":
             try:
@@ -142,14 +170,46 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True})
             return
 
+        if route.path == "/api/app-auth/exchange":
+            try:
+                self.send_json(200, app_auth_service.exchange(self.read_json_body()))
+            except AppAuthValidationError as exc:
+                self.send_json(400, {"error": "invalid_request", "message": str(exc)})
+            except (ProviderConfigurationError, ProviderUnavailableError) as exc:
+                self.send_json(503, {"error": "provider_unavailable", "message": str(exc)})
+            except ProviderVerificationError as exc:
+                self.send_app_unauthorized(exc)
+            except (json.JSONDecodeError, ValueError):
+                self.send_json(400, {"error": "invalid_request", "message": "Request body must be valid JSON"})
+            return
+
+        if route.path == "/api/app-auth/refresh":
+            try:
+                self.send_json(200, app_auth_service.refresh(self.read_json_body()))
+            except AppAuthValidationError as exc:
+                self.send_json(400, {"error": "invalid_request", "message": str(exc)})
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
+            except (json.JSONDecodeError, ValueError):
+                self.send_json(400, {"error": "invalid_request", "message": "Request body must be valid JSON"})
+            return
+
+        if route.path == "/api/app-auth/logout":
+            try:
+                app_auth_service.logout(self.headers.get("Authorization"))
+                self.send_json(200, {"ok": True})
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
+            return
+
         if route.path == "/api/leaves":
             try:
+                app_user = self.require_app_user()
                 payload = self.read_json_body()
-                account_key = self.resolve_account_key(payload=payload)
-                if account_key:
-                    payload["accountKey"] = account_key
-                self.send_json(200, shared_forest_service.create_leaf(payload))
-            except (ValidationError, AppUserError) as exc:
+                self.send_json(200, shared_forest_service.create_leaf(payload, app_user))
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
+            except ValidationError as exc:
                 self.send_json(400, {"error": str(exc)})
             except json.JSONDecodeError:
                 self.send_json(400, {"error": "Request body must be valid JSON"})
@@ -159,21 +219,26 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         if route.path == "/api/app-users/upsert":
             try:
+                app_user = self.require_app_user()
                 payload = self.read_json_body()
-                self.send_json(200, {"user": app_user_service.upsert(payload)})
-            except AppUserError as exc:
-                self.send_json(400, {"error": str(exc)})
+                self.send_json(200, {"user": app_auth_service.update_profile(app_user, payload)})
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
             except json.JSONDecodeError:
                 self.send_json(400, {"error": "Request body must be valid JSON"})
             return
 
         if route.path == "/api/sessions":
             try:
+                app_user = self.require_app_user()
                 payload = self.read_json_body()
-                account_key = self.resolve_account_key(payload=payload)
-                self.send_json(200, chat_session_service.save_session(payload, account_key))
-            except (ChatSessionError, AppUserError) as exc:
+                self.send_json(200, chat_session_service.save_session(payload, app_user))
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
+            except ChatSessionError as exc:
                 self.send_json(400, {"error": str(exc)})
+            except PermissionError:
+                self.send_json(404, {"error": "not_found", "message": "session not found"})
             except json.JSONDecodeError:
                 self.send_json(400, {"error": "Request body must be valid JSON"})
             return
@@ -224,24 +289,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not_found"})
             return
 
-        if not API_KEY:
-            self.send_json(500, {"error": "MODELSCOPE_API_KEY is not configured"})
-            return
-
         try:
+            app_user = self.require_app_user()
+            if not API_KEY:
+                self.send_json(503, {"error": "service_unavailable", "message": "AI service is not configured"})
+                return
+            rate_limit_service.check_ai_request(str(app_user["id"]), self.client_address[0])
             start = time.monotonic()
-            body = self.read_json_body()
-            account_key = self.resolve_account_key(payload=body)
-            app_user = None
-            if account_key:
-                app_user = app_user_service.upsert(
-                    {
-                        "accountKey": account_key,
-                        "nickname": body.get("nickname", ""),
-                        "bio": body.get("bio", ""),
-                    }
-                )
+            body = self.read_json_body(MAX_AI_BODY_BYTES)
             forward_body = self.sanitize_chat_completion_body(body)
+            self.validate_chat_completion_body(forward_body)
             forward_body["model"] = DEFAULT_MODEL
             upstream = self.forward_chat_completions(forward_body)
             ai_history_service.record(
@@ -252,32 +309,40 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 error_message="",
                 latency_ms=int((time.monotonic() - start) * 1000),
                 client_ip=self.client_address[0],
-                app_user_id=str(app_user["id"]) if app_user else None,
-                account_key=account_key,
+                app_user_id=str(app_user["id"]),
+                account_key=str(app_user["account_key"]),
             )
             self.send_json(200, upstream)
         except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
+            exc.read()
             ai_history_service.record(
                 model=DEFAULT_MODEL,
                 request_body=locals().get("forward_body", locals().get("body", {})),
                 response_body=None,
                 status="upstream_error",
-                error_message=error_body or exc.reason,
+                error_message=f"upstream HTTP {exc.code}",
                 latency_ms=int((time.monotonic() - locals().get("start", time.monotonic())) * 1000),
                 client_ip=self.client_address[0],
                 app_user_id=str(locals().get("app_user", {}).get("id")) if locals().get("app_user") else None,
-                account_key=locals().get("account_key", ""),
+                account_key=str(locals().get("app_user", {}).get("account_key", "")),
             )
             self.send_json(
                 exc.code,
                 {
                     "error": "upstream_error",
                     "status": exc.code,
-                    "message": error_body or exc.reason,
+                    "message": "AI provider request failed",
                 },
             )
-            print(f"ModelScope upstream error {exc.code}: {error_body or exc.reason}")
+            print(f"ModelScope upstream error: status={exc.code}")
+        except AppAuthError as exc:
+            self.send_app_unauthorized(exc)
+        except RateLimitExceeded as exc:
+            self.send_json(429, {"error": "rate_limited", "message": str(exc)})
+        except RequestBodyTooLarge as exc:
+            self.send_json(413, {"error": "request_too_large", "message": str(exc)})
+        except (AppAuthValidationError, ChatSessionError, ValueError) as exc:
+            self.send_json(400, {"error": "invalid_request", "message": str(exc)})
         except json.JSONDecodeError:
             self.send_json(400, {"error": "Request body must be valid JSON"})
         except Exception as exc:
@@ -286,31 +351,27 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 request_body=locals().get("forward_body", locals().get("body", {})),
                 response_body=None,
                 status="failed",
-                error_message=str(exc),
+                error_message=type(exc).__name__,
                 latency_ms=int((time.monotonic() - locals().get("start", time.monotonic())) * 1000),
                 client_ip=self.client_address[0],
                 app_user_id=str(locals().get("app_user", {}).get("id")) if locals().get("app_user") else None,
-                account_key=locals().get("account_key", ""),
+                account_key=str(locals().get("app_user", {}).get("account_key", "")),
             )
-            self.send_json(500, {"error": str(exc)})
+            self.send_json(500, {"error": "internal_error", "message": "AI request failed"})
 
     def do_DELETE(self) -> None:
         route = urlparse(self.path)
         if route.path.startswith("/api/sessions/"):
             session_id = route.path.removeprefix("/api/sessions/").strip("/")
-            query = parse_qs(route.query)
-            account_key = self.resolve_account_key(query=query)
-            if not account_key:
-                self.send_json(400, {"error": "accountKey is required"})
-                return
             try:
-                self.send_json(200, chat_session_service.delete_session(session_id, account_key))
-            except AppUserError as exc:
-                self.send_json(400, {"error": str(exc)})
-            return
-        if route.path.startswith("/api/leaves/"):
-            leaf_id = route.path.removeprefix("/api/leaves/").strip("/")
-            self.delete_leaf_as_admin(leaf_id)
+                app_user = self.require_app_user()
+                result = chat_session_service.delete_session(session_id, app_user)
+                if result["ok"]:
+                    self.send_json(200, result)
+                else:
+                    self.send_json(404, {"error": "not_found", "message": "session not found"})
+            except AppAuthError as exc:
+                self.send_app_unauthorized(exc)
             return
         if route.path.startswith("/api/admin/leaves/"):
             leaf_id = route.path.removeprefix("/api/admin/leaves/").strip("/")
@@ -335,8 +396,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
         except ValueError:
             return fallback
 
-    def read_json_body(self) -> dict[str, Any]:
+    def read_json_body(self, max_bytes: int = MAX_JSON_BODY_BYTES) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
+        if length < 0 or length > max_bytes:
+            raise RequestBodyTooLarge(f"request body must be at most {max_bytes} bytes")
         raw = self.rfile.read(length)
         if not raw:
             return {}
@@ -344,24 +407,6 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if not isinstance(parsed, dict):
             raise ValueError("Request body must be a JSON object")
         return parsed
-
-    def resolve_account_key(
-        self,
-        payload: dict[str, Any] | None = None,
-        query: dict[str, list[str]] | None = None,
-    ) -> str:
-        header_key = self.headers.get("X-Account-Key") or self.headers.get("X-User-Id") or ""
-        if header_key.strip():
-            return header_key.strip()
-        if query:
-            query_key = query.get("accountKey", [""])[0] or query.get("userId", [""])[0]
-            if query_key.strip():
-                return query_key.strip()
-        if payload:
-            payload_key = str(payload.get("accountKey") or payload.get("account_key") or payload.get("userId") or "")
-            if payload_key.strip():
-                return payload_key.strip()
-        return ""
 
     def sanitize_chat_completion_body(self, body: dict[str, Any]) -> dict[str, Any]:
         blocked_keys = {
@@ -376,6 +421,34 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "external_id",
         }
         return {key: value for key, value in body.items() if key not in blocked_keys}
+
+    def validate_chat_completion_body(self, body: dict[str, Any]) -> None:
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not messages or len(messages) > MAX_AI_MESSAGES:
+            raise ValueError(f"messages must contain between 1 and {MAX_AI_MESSAGES} items")
+        for message in messages:
+            if not isinstance(message, dict):
+                raise ValueError("each message must be an object")
+            content = message.get("content")
+            if not isinstance(content, str) or len(content) > MAX_AI_MESSAGE_LENGTH:
+                raise ValueError(f"each message content must be at most {MAX_AI_MESSAGE_LENGTH} characters")
+        max_tokens = body.get("max_tokens", MAX_AI_TOKENS)
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or not 1 <= max_tokens <= MAX_AI_TOKENS:
+            raise ValueError(f"max_tokens must be between 1 and {MAX_AI_TOKENS}")
+
+    def require_app_user(self) -> dict[str, Any]:
+        return app_auth_service.require_user(self.headers.get("Authorization"))
+
+    def public_app_user(self, user: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(user["id"]),
+            "provider": str(user.get("provider") or ""),
+            "nickname": str(user.get("nickname") or ""),
+            "bio": str(user.get("bio") or ""),
+        }
+
+    def send_app_unauthorized(self, exc: BaseException) -> None:
+        self.send_json(401, {"error": "unauthorized", "message": str(exc)})
 
     def require_admin(self) -> dict[str, Any]:
         user = auth_service.require_user(self.headers.get("Authorization"))
@@ -441,7 +514,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def send_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-Id, X-Account-Key")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def log_message(self, format: str, *args: Any) -> None:
         print("%s - %s" % (self.address_string(), format % args))

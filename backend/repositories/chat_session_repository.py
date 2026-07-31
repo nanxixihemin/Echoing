@@ -28,7 +28,6 @@ class ChatSessionRepository:
               messages_json, created_at, updated_at, synced_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-              app_user_id = excluded.app_user_id,
               account_key = excluded.account_key,
               theme = excluded.theme,
               summary = excluded.summary,
@@ -37,6 +36,7 @@ class ChatSessionRepository:
               created_at = excluded.created_at,
               updated_at = excluded.updated_at,
               synced_at = excluded.synced_at
+            WHERE chat_sessions.app_user_id = excluded.app_user_id
             """,
             (
                 session_id,
@@ -53,7 +53,7 @@ class ChatSessionRepository:
         )
         row = self.get_for_user(session_id, app_user_id)
         if row is None:
-            raise RuntimeError("Saved chat session cannot be loaded")
+            raise PermissionError("chat session belongs to another user")
         return row
 
     def get_for_user(self, session_id: str, app_user_id: str) -> dict[str, Any] | None:

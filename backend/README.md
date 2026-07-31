@@ -1,193 +1,136 @@
 # Echoing Backend
 
-Echoing backend is intentionally small: Python standard library, SQLite, no web framework dependency.
+The Echoing backend is a Python HTTP service backed by SQLite. App users and
+administrators use separate authentication systems.
 
-It provides:
+## Authentication model
 
-- ModelScope chat-completions proxy
-- Shared forest persistence
-- Admin login and bearer-token auth
-- Admin panel
-- Leaf moderation and deletion
-- AI request history
-- App user profile upsert
-- Account-scoped chat sessions and memory context
-- SQLite schema migrations
+App login follows this chain:
 
-## Configure
-
-Create `backend/.env` from `.env.example`.
-
-```env
-MODELSCOPE_API_KEY=replace_with_modelscope_api_key
-MODELSCOPE_API_BASE=https://api-inference.modelscope.cn/v1
-MODELSCOPE_MODEL=deepseek-ai/DeepSeek-V4-Flash
-HOST=0.0.0.0
-PORT=8111
-ECHOING_DB_PATH=./data/echoing.db
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=replace_with_strong_admin_password
-AUTH_TOKEN_TTL_HOURS=24
-MODERATION_BLOCK_KEYWORDS=
+```text
+AGC email access token or Huawei Account ID token
+-> POST /api/app-auth/exchange
+-> server-side Huawei signature and claim verification
+-> opaque Echoing access and refresh tokens
+-> Authorization: Bearer <echoing_access_token>
 ```
 
-Do not commit `backend/.env`. Change `ADMIN_PASSWORD` before deployment.
+Echoing access tokens expire after 30 minutes. Refresh tokens expire after 30
+days and rotate on every refresh. Only SHA-256 token hashes are stored in
+SQLite. Client-supplied `accountKey`, `userId`, `X-Account-Key`, and
+`X-User-Id` never establish identity.
 
-The first admin user is created automatically on startup when the `admin_users` table is empty.
+AGC verification follows Huawei's official Auth Server SDK behavior: it
+verifies asymmetric JWT signatures with the official AGC public-key endpoint,
+then validates issuer, project audience, issue time, and expiry. Huawei Account
+uses OpenID Connect discovery and JWKS, validating signature, issuer, audience,
+expiry, issue time, nonce, and `azp` when present. Both providers fail closed.
 
-## Run
+## Install and configure
+
+```powershell
+cd backend
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Required provider values:
+
+- `AGC_PROJECT_ID`: AGC project/product identifier expected in `aud`.
+- `AGC_TOKEN_ISSUER`: expected AGC issuer, normally ending in the same project ID.
+- `HUAWEI_ACCOUNT_CLIENT_ID`: Account Kit client ID expected in `aud` and `azp`.
+
+The official HTTPS endpoints are configurable for controlled key rotation and
+regional changes. Do not replace them with non-Huawei endpoints. Provider
+verification timeout and clock skew are bounded by the backend.
+
+AI rate limits default to 20 requests per user and 60 requests per IP in a
+60-second window. The AI endpoint also limits body size, message count, message
+length, and `max_tokens`; the model remains server-controlled.
+
+Never commit `.env`. Keep `MODELSCOPE_API_KEY`, admin credentials, Huawei
+secrets, tokens, signing data, and production databases out of source control.
+
+## Run and test
 
 ```powershell
 cd backend
 python server.py
 ```
 
-Health check:
-
-```text
-http://127.0.0.1:8111/health
-```
-
-Admin panel:
-
-```text
-http://127.0.0.1:8111/admin
-```
-
-## Public APIs
-
-List shared leaves:
-
 ```powershell
-Invoke-WebRequest -Uri http://127.0.0.1:8111/api/leaves
+cd backend
+python -m unittest discover -s tests -v
+python -m compileall .
 ```
 
-Create a leaf:
+Tests use temporary SQLite databases and provider-verifier test doubles. They
+do not use production credentials or databases.
 
-```powershell
-Invoke-WebRequest -Uri http://127.0.0.1:8111/api/leaves -Method POST -ContentType 'application/json' -Headers @{"X-Account-Key"="email:test@example.com"} -Body '{"content":"hello","nickname":"anonymous","accountKey":"email:test@example.com","ownerNickname":"Xixi"}'
-```
+## APIs
 
-Like a leaf:
-
-```powershell
-Invoke-WebRequest -Uri http://127.0.0.1:8111/api/leaves/<leaf_id>/like -Method POST
-```
-
-AI proxy:
+Public:
 
 ```text
-POST /v1/chat/completions
+GET  /health
+GET  /api/leaves
+POST /api/leaves/{id}/like
 ```
 
-The backend always uses `MODELSCOPE_MODEL` from `.env`; the app cannot override the model.
-
-App user upsert:
+App authentication:
 
 ```text
-POST /api/app-users/upsert
+POST /api/app-auth/exchange
+POST /api/app-auth/refresh
+GET  /api/app-auth/me
+POST /api/app-auth/logout
 ```
 
-Chat session list/save:
+App Bearer token required:
 
 ```text
-GET  /api/sessions?accountKey=<account_key>&limit=50
-POST /api/sessions
+POST   /api/app-users/upsert
+GET    /api/sessions
+POST   /api/sessions
+GET    /api/sessions/{id}
+DELETE /api/sessions/{id}
+GET    /api/memory-context
+POST   /api/leaves
+POST   /v1/chat/completions
 ```
 
-Memory context:
+HTTPS verification examples:
 
-```text
-GET /api/memory-context?accountKey=<account_key>&limit=6
+```bash
+curl https://echoing.negentropypixels.me/health
+curl https://echoing.negentropypixels.me/api/leaves
+curl -X POST https://echoing.negentropypixels.me/api/app-auth/exchange \
+  -H 'Content-Type: application/json' \
+  -d '{"provider":"agc","credential":"<AGC_ACCESS_TOKEN>","deviceId":"<DEVICE_ID>"}'
+curl https://echoing.negentropypixels.me/api/app-auth/me \
+  -H 'Authorization: Bearer <ECHOING_ACCESS_TOKEN>'
+curl -X POST https://echoing.negentropypixels.me/api/app-auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refreshToken":"<ECHOING_REFRESH_TOKEN>","deviceId":"<DEVICE_ID>"}'
 ```
 
-## Tarot AI Loop
+Admin endpoints remain under `/api/auth/*` and `/api/admin/*`. Admin tokens are
+not valid for App APIs, and App tokens are not valid for admin APIs.
 
-`pages/TarotView` and `pages/AIDialogPage` call the backend AI proxy through
-`AppConfig.AI_CHAT_COMPLETIONS_PROXY_URL`.
+## Database migration
 
-For local verification:
+Migration 005 adds:
 
-```powershell
-cd D:\do_it\first_fruit\echoing\backend
-python server.py
-```
+- `app_identities`
+- `app_auth_sessions`
+- `app_identity_migrations`
 
-Then check:
+The migration is additive and idempotent. Existing `app_users`, sessions,
+leaves, and AI history remain in place. A legacy `email_<normalized email>` user
+is linked only after AGC supplies the same verified email and the legacy user
+has not already been linked. Legacy Huawei `openID` rows are never auto-linked.
+Migration audit rows contain a hash of the legacy account key, never a token.
 
-```text
-http://127.0.0.1:8111/health
-```
-
-When running on a real HarmonyOS device, do not set the app proxy URL to
-`127.0.0.1`; use the computer LAN IP and keep the `/v1/chat/completions` path,
-for example `http://192.168.1.10:8111/v1/chat/completions`.
-
-Minimal app path to verify:
-
-```text
-Index -> TarotView -> AI interpretation -> AIDialogPage -> ask follow-up -> ChatHistoryPage
-```
-
-## Admin APIs
-
-Login:
-
-```text
-POST /api/auth/login
-```
-
-Use the returned token as:
-
-```text
-Authorization: Bearer <token>
-```
-
-Admin-only endpoints:
-
-```text
-GET    /api/auth/me
-POST   /api/auth/logout
-GET    /api/admin/leaves
-DELETE /api/admin/leaves/<leaf_id>
-POST   /api/admin/leaves/<leaf_id>/hide
-POST   /api/admin/leaves/<leaf_id>/restore
-GET    /api/admin/ai-history
-```
-
-For compatibility, this also works as an admin-only delete endpoint:
-
-```text
-DELETE /api/leaves/<leaf_id>
-```
-
-## SQLite
-
-The database is initialized and migrated automatically on startup.
-
-Tables:
-
-- `schema_migrations`
-- `shared_leaves`
-- `app_users`
-- `chat_sessions`
-- `admin_users`
-- `auth_sessions`
-- `ai_history`
-
-Shared leaves are kept visible for 7 days. Expired leaves are soft-deleted when the list endpoint is called.
-
-App user accounts are separate from backend admin accounts. `admin_users` and
-`auth_sessions` are only for the admin panel. App user identity is stored in
-`app_users`, while AI and tarot memory are stored in `chat_sessions` and linked
-by `account_key`.
-
-Shared forest records can include `account_key` and `owner_nickname` so the
-admin panel can see who published a leaf. Older shared leaves remain valid with
-empty owner fields.
-
-API keys are never stored in SQLite.
-
-## Deployment
-
-See `deploy/README.md` for systemd and nginx templates.
+Run `python server.py` to apply pending migrations automatically. Back up the
+SQLite file first in production. See `deploy/README.md` for deployment and
+rollback steps.

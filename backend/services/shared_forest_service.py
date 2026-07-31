@@ -6,13 +6,11 @@ from uuid import uuid4
 
 from database import get_connection
 from repositories.shared_forest_repository import SharedForestRepository
-from services.app_user_service import AppUserService
 from services.moderation_service import ModerationService
 
 
 MAX_CONTENT_LENGTH = 500
 MAX_NICKNAME_LENGTH = 12
-MAX_ACCOUNT_KEY_LENGTH = 128
 MAX_OWNER_NICKNAME_LENGTH = 64
 DEFAULT_NICKNAME = "anonymous leaf"
 LEAF_RETENTION_DAYS = 7
@@ -31,7 +29,6 @@ class NotFoundError(LookupError):
 class SharedForestService:
     def __init__(self) -> None:
         self.moderation_service = ModerationService()
-        self.app_user_service = AppUserService()
 
     def list_leaves(self, limit: int = DEFAULT_LIST_LIMIT) -> dict[str, Any]:
         normalized_limit = max(1, min(limit, MAX_LIST_LIMIT))
@@ -44,24 +41,15 @@ class SharedForestService:
 
         return {"leaves": leaves}
 
-    def create_leaf(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def create_leaf(self, payload: dict[str, Any], app_user: dict[str, Any]) -> dict[str, Any]:
         content = self._normalize_content(payload.get("content"))
         nickname = self._normalize_nickname(payload.get("nickname"))
-        account_key = self._normalize_optional_text(
-            payload.get("accountKey") or payload.get("account_key"),
-            MAX_ACCOUNT_KEY_LENGTH,
-        )
-        owner_nickname = self._normalize_optional_text(
-            payload.get("ownerNickname") or payload.get("owner_nickname") or payload.get("appNickname"),
-            MAX_OWNER_NICKNAME_LENGTH,
-        )
+        account_key = str(app_user["account_key"])
+        owner_nickname = self._normalize_optional_text(app_user.get("nickname"), MAX_OWNER_NICKNAME_LENGTH)
         ai_response = self._normalize_optional_text(payload.get("ai_response") or payload.get("aiResponse"), 1000)
         moderation = self.moderation_service.review_text(content)
         if moderation.flag == "blocked":
             raise ValidationError("content did not pass moderation")
-        app_user = None
-        if account_key:
-            app_user = self.app_user_service.get_or_create_from_identity(account_key, owner_nickname)
         created_at = self._format_time(self._now())
 
         with get_connection() as connection:
@@ -74,7 +62,7 @@ class SharedForestService:
                 moderation_flag=moderation.flag,
                 moderation_reason=moderation.reason,
                 created_at=created_at,
-                app_user_id=str(app_user["id"]) if app_user else None,
+                app_user_id=str(app_user["id"]),
                 account_key=account_key,
                 owner_nickname=owner_nickname,
             )

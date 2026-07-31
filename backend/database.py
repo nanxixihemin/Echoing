@@ -12,9 +12,17 @@ CONFIGURED_DB_PATH = Path(os.environ.get("ECHOING_DB_PATH", str(DEFAULT_DB_PATH)
 DB_PATH = CONFIGURED_DB_PATH if CONFIGURED_DB_PATH.is_absolute() else ROOT / CONFIGURED_DB_PATH
 
 
+class ManagedConnection(sqlite3.Connection):
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> bool:
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
+    connection = sqlite3.connect(DB_PATH, factory=ManagedConnection)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
@@ -222,9 +230,78 @@ def _migration_004_shared_forest_app_owner(connection: sqlite3.Connection) -> No
     )
 
 
+def _migration_005_trusted_app_auth(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_identities (
+          id TEXT PRIMARY KEY,
+          app_user_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          provider_user_id TEXT NOT NULL,
+          email TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY(app_user_id) REFERENCES app_users(id),
+          UNIQUE(provider, provider_user_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_app_identities_user_id
+        ON app_identities(app_user_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_auth_sessions (
+          id TEXT PRIMARY KEY,
+          app_user_id TEXT NOT NULL,
+          access_token_hash TEXT NOT NULL UNIQUE,
+          refresh_token_hash TEXT NOT NULL UNIQUE,
+          access_expires_at TEXT NOT NULL,
+          refresh_expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          revoked_at TEXT,
+          device_id_hash TEXT NOT NULL,
+          last_used_at TEXT,
+          FOREIGN KEY(app_user_id) REFERENCES app_users(id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_app_auth_sessions_user_id
+        ON app_auth_sessions(app_user_id)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_app_auth_sessions_refresh_hash
+        ON app_auth_sessions(refresh_token_hash)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_identity_migrations (
+          id TEXT PRIMARY KEY,
+          identity_id TEXT NOT NULL UNIQUE,
+          app_user_id TEXT NOT NULL,
+          legacy_account_key_hash TEXT NOT NULL,
+          migration_type TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY(identity_id) REFERENCES app_identities(id),
+          FOREIGN KEY(app_user_id) REFERENCES app_users(id)
+        )
+        """
+    )
+
+
 MIGRATIONS: list[tuple[int, str, Migration]] = [
     (1, "shared_forest_base", _migration_001_shared_forest),
     (2, "auth_admin_ai_history", _migration_002_auth_admin_ai_history),
     (3, "app_users_chat_sessions", _migration_003_app_users_chat_sessions),
     (4, "shared_forest_app_owner", _migration_004_shared_forest_app_owner),
+    (5, "trusted_app_auth", _migration_005_trusted_app_auth),
 ]

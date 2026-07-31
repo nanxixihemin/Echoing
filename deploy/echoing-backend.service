@@ -1,16 +1,22 @@
 [Unit]
 Description=Echoing backend
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/echoing/backend
-EnvironmentFile=/opt/echoing/backend/.env
-ExecStart=/usr/bin/python3 /opt/echoing/backend/server.py
-Restart=always
-RestartSec=5
 User=echoing
 Group=echoing
+WorkingDirectory=/opt/echoing/backend
+EnvironmentFile=/opt/echoing/backend/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/echoing/venv/bin/python /opt/echoing/backend/server.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

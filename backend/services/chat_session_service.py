@@ -6,25 +6,12 @@ from typing import Any, Mapping
 
 from database import get_connection
 from repositories.chat_session_repository import ChatSessionRepository
-from services.app_user_service import AppUserError, AppUserService
-
-
 class ChatSessionError(ValueError):
     pass
 
 
 class ChatSessionService:
-    def __init__(self) -> None:
-        self.app_user_service = AppUserService()
-
-    def save_session(self, payload: Mapping[str, Any], account_key: str | None) -> dict[str, Any]:
-        normalized_account_key = self._resolve_account_key(payload, account_key)
-        user = self.app_user_service.get_or_create_from_identity(
-            normalized_account_key,
-            nickname=self._text(payload.get("nickname")),
-            bio=self._text(payload.get("bio")),
-        )
-
+    def save_session(self, payload: Mapping[str, Any], app_user: Mapping[str, Any]) -> dict[str, Any]:
         session_id = self._text(payload.get("id"))
         if not session_id:
             raise ChatSessionError("session id is required")
@@ -40,8 +27,8 @@ class ChatSessionService:
         with get_connection() as connection:
             row = ChatSessionRepository(connection).upsert(
                 session_id=session_id,
-                app_user_id=str(user["id"]),
-                account_key=normalized_account_key,
+                app_user_id=str(app_user["id"]),
+                account_key=str(app_user["account_key"]),
                 theme=self._text(payload.get("theme")),
                 summary=self._text(payload.get("summary")),
                 system_prompt=self._text(payload.get("systemPrompt")),
@@ -52,23 +39,27 @@ class ChatSessionService:
             )
         return self._to_client_session(row)
 
-    def list_sessions(self, account_key: str, limit: int) -> dict[str, Any]:
-        user = self.app_user_service.get_or_create_from_identity(account_key)
+    def list_sessions(self, app_user: Mapping[str, Any], limit: int) -> dict[str, Any]:
         normalized_limit = max(1, min(limit, 200))
         with get_connection() as connection:
-            rows = ChatSessionRepository(connection).list_for_user(str(user["id"]), normalized_limit)
+            rows = ChatSessionRepository(connection).list_for_user(str(app_user["id"]), normalized_limit)
         return {"items": [self._to_client_session(row, include_messages=False) for row in rows]}
 
-    def delete_session(self, session_id: str, account_key: str) -> dict[str, Any]:
-        user = self.app_user_service.get_or_create_from_identity(account_key)
+    def get_session(self, session_id: str, app_user: Mapping[str, Any]) -> dict[str, Any] | None:
         with get_connection() as connection:
-            deleted = ChatSessionRepository(connection).delete_for_user(session_id, str(user["id"]))
+            row = ChatSessionRepository(connection).get_for_user(session_id, str(app_user["id"]))
+        return self._to_client_session(row) if row is not None else None
+
+    def delete_session(self, session_id: str, app_user: Mapping[str, Any]) -> dict[str, Any]:
+        with get_connection() as connection:
+            deleted = ChatSessionRepository(connection).delete_for_user(session_id, str(app_user["id"]))
         return {"ok": deleted}
 
-    def memory_context(self, account_key: str, limit: int = 5) -> dict[str, Any]:
-        user = self.app_user_service.get_or_create_from_identity(account_key)
+    def memory_context(self, app_user: Mapping[str, Any], limit: int = 5) -> dict[str, Any]:
         with get_connection() as connection:
-            rows = ChatSessionRepository(connection).list_for_user(str(user["id"]), max(1, min(limit, 20)))
+            rows = ChatSessionRepository(connection).list_for_user(
+                str(app_user["id"]), max(1, min(limit, 20))
+            )
         lines: list[str] = []
         for row in rows[:limit]:
             theme = self._text(row.get("theme")) or "未设主题"
@@ -76,12 +67,6 @@ class ChatSessionService:
             lines.append(f"- 「{theme}」: {summary}")
         context = "用户的历史占卜记录：\n" + "\n".join(lines) if lines else ""
         return {"context": context, "count": len(lines)}
-
-    def _resolve_account_key(self, payload: Mapping[str, Any], explicit: str | None) -> str:
-        account_key = self._text(explicit) or self._text(payload.get("accountKey")) or self._text(payload.get("userId"))
-        if not account_key:
-            raise ChatSessionError("accountKey is required")
-        return account_key
 
     def _to_client_session(self, row: Mapping[str, Any], include_messages: bool = True) -> dict[str, Any]:
         messages = []
@@ -94,8 +79,7 @@ class ChatSessionService:
                 messages = []
         return {
             "id": str(row["id"]),
-            "userId": str(row["account_key"]),
-            "accountKey": str(row["account_key"]),
+            "userId": str(row["app_user_id"]),
             "theme": self._text(row.get("theme")),
             "summary": self._text(row.get("summary")),
             "systemPrompt": self._text(row.get("system_prompt")),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -53,9 +55,11 @@ class AIHistoryService:
                     role = item.get("role", "unknown")
                     content = item.get("content", "")
                     if isinstance(content, str):
-                        parts.append(f"{role}: {content}")
+                        parts.append(
+                            f"{role}: length={len(content)}, sha256={self._short_hash(content)}"
+                        )
             return "\n".join(parts)[:2000]
-        return str(request_body)[:2000]
+        return f"request_metadata_sha256={self._short_hash(json.dumps(request_body, sort_keys=True))}"
 
     def _extract_response_preview(self, response_body: dict[str, Any] | None) -> str:
         if not response_body:
@@ -66,8 +70,12 @@ class AIHistoryService:
             if isinstance(first, dict):
                 message = first.get("message")
                 if isinstance(message, dict) and isinstance(message.get("content"), str):
-                    return str(message["content"])[:2000]
-        return str(response_body)[:2000]
+                    content = str(message["content"])
+                    return f"length={len(content)}, sha256={self._short_hash(content)}"
+        return f"response_metadata_sha256={self._short_hash(json.dumps(response_body, sort_keys=True))}"
+
+    def _short_hash(self, value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)

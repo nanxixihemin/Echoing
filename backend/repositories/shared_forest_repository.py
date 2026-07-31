@@ -78,7 +78,8 @@ class SharedForestRepository:
         cursor = self.connection.execute(
             """
             UPDATE shared_leaves
-            SET status = 'visible', deleted_at = NULL, deleted_by = NULL, updated_at = ?
+            SET status = 'visible', deleted_at = NULL, deleted_by = NULL,
+                moderation_flag = 'clean', moderation_reason = '', updated_at = ?
             WHERE id = ?
             """,
             (updated_at, leaf_id),
@@ -152,14 +153,16 @@ class SharedForestRepository:
         return dict(row)
 
     def increment_like(self, leaf_id: str, updated_at: str) -> dict[str, Any] | None:
-        self.connection.execute(
+        cursor = self.connection.execute(
             """
             UPDATE shared_leaves
             SET like_count = like_count + 1, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND status = 'visible'
             """,
             (updated_at, leaf_id),
         )
+        if cursor.rowcount == 0:
+            return None
         row = self.connection.execute(
             """
             SELECT id, like_count
