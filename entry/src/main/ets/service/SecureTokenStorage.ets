@@ -50,17 +50,24 @@ export class SecureTokenStorage {
     if (!raw) {
       return '';
     }
-    await this.ensureWrappingKey();
-    const stored = JSON.parse(raw) as StoredTokenBlob;
-    const base64 = new util.Base64Helper();
-    const plaintext = await this.unprotect(
-      base64.decodeSync(stored.ciphertext),
-      base64.decodeSync(stored.nonce),
-      base64.decodeSync(stored.authTag)
-    );
-    const token = new util.TextDecoder('utf-8').decodeToString(plaintext);
-    plaintext.fill(0);
-    return token;
+    try {
+      await this.ensureWrappingKey();
+      const stored = JSON.parse(raw) as StoredTokenBlob;
+      const base64 = new util.Base64Helper();
+      const plaintext = await this.unprotect(
+        base64.decodeSync(stored.ciphertext),
+        base64.decodeSync(stored.nonce),
+        base64.decodeSync(stored.authTag)
+      );
+      const token = new util.TextDecoder('utf-8').decodeToString(plaintext);
+      plaintext.fill(0);
+      return token;
+    } catch (error) {
+      // 密钥失效或 blob 损坏（设备恢复、HUKS 密钥轮换）时无法再解出该令牌，
+      // 丢弃它并按“无会话”处理，避免每次启动重复失败。
+      await this.clearRefreshToken();
+      return '';
+    }
   }
 
   async clearRefreshToken(): Promise<void> {

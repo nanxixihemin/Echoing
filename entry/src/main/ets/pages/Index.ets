@@ -17,9 +17,16 @@ struct Index {
   @State pendingTasks: EchoTask[] = [];
   @State showDrawer: boolean = false;
   @State activeTool: string = 'none';
-  @StorageProp('isLoggedIn') isLoggedIn: boolean = false;
+  @StorageProp('isLoggedIn') @Watch('onLoginStateChanged') isLoggedIn: boolean = false;
   @StorageProp('userNickname') userNickname: string = '';
   private dbService: DatabaseService | null = null;
+
+  onLoginStateChanged(): void {
+    // 会话在后台请求中失效时由页面层导航，避免服务层在转场途中强行跳转。
+    if (!this.isLoggedIn) {
+      router.replaceUrl({ url: 'pages/LoginPage' }).catch(() => {});
+    }
+  }
 
   async aboutToAppear() {
     this.dbService = new DatabaseService(getContext(this) as common.UIAbilityContext);

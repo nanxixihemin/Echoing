@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import http from '@ohos.net.http';
 import { AuthSessionService } from './AuthSessionService';
 
@@ -44,8 +43,11 @@ export class AuthenticatedHttpClient {
   }
 
   private static async expireSession(auth: AuthSessionService): Promise<void> {
+    // 只清理会话状态并广播；导航由页面层观察 isLoggedIn 决定，
+    // 避免后台请求在页面转场途中强行跳转。
     await auth.clearLocalSession();
-    router.replaceUrl({ url: 'pages/LoginPage' }).catch(() => {});
+    AppStorage.setOrCreate<boolean>('isLoggedIn', false);
+    AppStorage.setOrCreate<string>('currentAccountKey', '');
   }
 
   private static async execute(
