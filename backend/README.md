@@ -8,9 +8,9 @@ administrators use separate authentication systems.
 App login follows this chain:
 
 ```text
-AGC email access token or Huawei Account ID token
+AGC email access token or Huawei Account authorization code
 -> POST /api/app-auth/exchange
--> server-side Huawei signature and claim verification
+-> server-side Huawei code redemption, signature and claim verification
 -> opaque Echoing access and refresh tokens
 -> Authorization: Bearer <echoing_access_token>
 ```
@@ -23,8 +23,11 @@ SQLite. Client-supplied `accountKey`, `userId`, `X-Account-Key`, and
 AGC verification follows Huawei's official Auth Server SDK behavior: it
 verifies asymmetric JWT signatures with the official AGC public-key endpoint,
 then validates issuer, project audience, issue time, and expiry. Huawei Account
-uses OpenID Connect discovery and JWKS, validating signature, issuer, audience,
-expiry, issue time, nonce, and `azp` when present. Both providers fail closed.
+login sends only a single-use authorization code from the device; the backend
+exchanges it for an ID token at the discovered `token_endpoint` using the
+confidential client secret, then validates signature, issuer, audience, expiry,
+issue time, nonce, and `azp` when present via OpenID Connect discovery and
+JWKS. Both providers fail closed.
 
 ## Install and configure
 
@@ -39,6 +42,12 @@ Required provider values:
 - `AGC_PROJECT_ID`: AGC project/product identifier expected in `aud`.
 - `AGC_TOKEN_ISSUER`: expected AGC issuer, normally ending in the same project ID.
 - `HUAWEI_ACCOUNT_CLIENT_ID`: Account Kit client ID expected in `aud` and `azp`.
+  This is the AGC app ID, the same value declared as `client_id` in the client's
+  `module.json5` metadata.
+- `HUAWEI_ACCOUNT_CLIENT_SECRET`: Account Kit client secret used to redeem the
+  authorization code. Server side only; it must never reach the client.
+- `HUAWEI_ACCOUNT_REDIRECT_URI`: leave empty for on-device Account Kit login.
+  Set it only if the AGC console requires a redirect URI on the token request.
 
 The official HTTPS endpoints are configurable for controlled key rotation and
 regional changes. Do not replace them with non-Huawei endpoints. Provider
@@ -107,6 +116,9 @@ curl https://echoing.negentropypixels.me/api/leaves
 curl -X POST https://echoing.negentropypixels.me/api/app-auth/exchange \
   -H 'Content-Type: application/json' \
   -d '{"provider":"agc","credential":"<AGC_ACCESS_TOKEN>","deviceId":"<DEVICE_ID>"}'
+curl -X POST https://echoing.negentropypixels.me/api/app-auth/exchange \
+  -H 'Content-Type: application/json' \
+  -d '{"provider":"huawei","credential":"<HUAWEI_AUTHORIZATION_CODE>","deviceId":"<DEVICE_ID>","nonce":"<LOGIN_NONCE>"}'
 curl https://echoing.negentropypixels.me/api/app-auth/me \
   -H 'Authorization: Bearer <ECHOING_ACCESS_TOKEN>'
 curl -X POST https://echoing.negentropypixels.me/api/app-auth/refresh \

@@ -102,7 +102,6 @@ export class AuthSessionService {
     request.forceLogin = true;
     request.state = state;
     request.nonce = nonce;
-    request.idTokenSignAlgorithm = authentication.IdTokenSignAlgorithm.PS256;
     const controller = this.context === null
       ? new authentication.AuthenticationController()
       : new authentication.AuthenticationController(this.context);
@@ -110,9 +109,11 @@ export class AuthSessionService {
     if (!response.state || response.state !== state) {
       throw new Error('Huawei login state validation failed');
     }
-    const credential = response.data?.idToken || '';
+    // 只取一次性授权码：id_token 的直返能力需单独开通，而授权码由后端用
+    // client_secret 换取并验签，客户端拿到的凭据本身无法冒充身份。
+    const credential = response.data?.authorizationCode || '';
     if (!credential) {
-      throw new Error('当前华为账号服务端验证尚未配置');
+      throw new Error('华为账号授权未返回有效授权码');
     }
     return this.exchange('huawei', credential, nonce);
   }

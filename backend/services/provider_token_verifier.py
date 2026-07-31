@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import jwt
 from cryptography.hazmat.primitives import serialization
@@ -117,7 +117,46 @@ class ProviderTokenVerifier:
             display_name=str(claims.get("name") or "").strip(),
         )
 
-    def verify_huawei(self, id_token: str, nonce: str) -> VerifiedIdentity:
+    def verify_huawei(self, authorization_code: str, nonce: str) -> VerifiedIdentity:
+        """Exchange a Huawei Account authorization code for an ID token and verify it.
+
+        The client only ever holds a single-use authorization code; the ID token is
+        fetched server side with the confidential client secret so a forged or replayed
+        client payload cannot establish an identity.
+        """
+        if not authorization_code or len(authorization_code) > 4096 or not nonce:
+            raise ProviderVerificationError("invalid Huawei credential")
+        id_token = self._exchange_huawei_authorization_code(authorization_code)
+        return self._verify_huawei_id_token(id_token, nonce)
+
+    def _exchange_huawei_authorization_code(self, authorization_code: str) -> str:
+        client_id = os.environ.get("HUAWEI_ACCOUNT_CLIENT_ID", "").strip()
+        client_secret = os.environ.get("HUAWEI_ACCOUNT_CLIENT_SECRET", "").strip()
+        if not client_id or not client_secret:
+            raise ProviderConfigurationError("Huawei Account server verification is not configured")
+
+        discovery, _ = self._get_huawei_configuration()
+        token_endpoint = str(discovery.get("token_endpoint") or "").strip()
+        if not self._is_https_url(token_endpoint):
+            raise ProviderConfigurationError("Huawei OIDC discovery response is invalid")
+
+        form: dict[str, str] = {
+            "grant_type": "authorization_code",
+            "code": authorization_code,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+        redirect_uri = os.environ.get("HUAWEI_ACCOUNT_REDIRECT_URI", "").strip()
+        if redirect_uri:
+            form["redirect_uri"] = redirect_uri
+
+        payload = self._post_form(token_endpoint, form)
+        id_token = str(payload.get("id_token") or "")
+        if not id_token or len(id_token) > 16384:
+            raise ProviderVerificationError("Huawei authorization code did not yield an identity token")
+        return id_token
+
+    def _verify_huawei_id_token(self, id_token: str, nonce: str) -> VerifiedIdentity:
         client_id = os.environ.get("HUAWEI_ACCOUNT_CLIENT_ID", "").strip()
         if not client_id:
             raise ProviderConfigurationError("Huawei Account server verification is not configured")
@@ -223,6 +262,37 @@ class ProviderTokenVerifier:
         except (OSError, urllib.error.URLError) as exc:
             raise ProviderUnavailableError("provider verification service is unavailable") from exc
         except json.JSONDecodeError as exc:
+            raise ProviderUnavailableError("provider verification response is invalid") from exc
+        if not isinstance(parsed, dict):
+            raise ProviderUnavailableError("provider verification response is invalid")
+        return parsed
+
+    def _post_form(self, url: str, form: dict[str, str]) -> dict[str, Any]:
+        if not self._is_https_url(url):
+            raise ProviderConfigurationError("provider verification URLs must use HTTPS")
+        request = urllib.request.Request(
+            url,
+            data=urlencode(form).encode("utf-8"),
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self._http_timeout_seconds()) as response:
+                raw = response.read(1024 * 1024)
+        except urllib.error.HTTPError as exc:
+            # 4xx means the provider rejected the code (expired, replayed, wrong client);
+            # only 5xx and transport faults are our outage to report.
+            if 400 <= exc.code < 500:
+                raise ProviderVerificationError("Huawei authorization code was rejected") from exc
+            raise ProviderUnavailableError("provider verification service is unavailable") from exc
+        except (OSError, urllib.error.URLError) as exc:
+            raise ProviderUnavailableError("provider verification service is unavailable") from exc
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ProviderUnavailableError("provider verification response is invalid") from exc
         if not isinstance(parsed, dict):
             raise ProviderUnavailableError("provider verification response is invalid")
